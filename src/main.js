@@ -112,15 +112,21 @@ function createBiomeUniforms() {
   }
 }
 
-// GLB Catalog — loaded dynamically from /GLB/manifest.json
+// GLB Catalog — assets available on Cloudflare R2
 const GLB_CDN_BASE = 'https://pub-6aa6b6baa3b043bf9598c7429620b422.r2.dev'
+const R2_ASSETS = [
+  'antonmars.connections.enviroment.glb',
+  'hands.on.mountain.glb',
+  'mate.yerba.glb',
+  'wheel.white.glb',
+  'rueda.glb',
+  'ruedacompresed.glb',
+  'van.satelite.glb',
+  'van.creative.glb',
+]
 let GLB_CATALOG = []
 async function loadGLBCatalog() {
-  try {
-    const res = await fetch('/GLB/manifest.json')
-    const files = await res.json()
-    GLB_CATALOG = files.map(f => ({ name: f.replace(/\.glb$/i,''), path: `${GLB_CDN_BASE}/${f}`, thumb: '📦' }))
-  } catch(e) { GLB_CATALOG = [] }
+  GLB_CATALOG = R2_ASSETS.map(f => ({ name: f.replace(/\.glb$/i,''), path: `${GLB_CDN_BASE}/${f}`, thumb: '📦' }))
 }
 
 // World Zones — hardcoded discovery zones (legacy)
