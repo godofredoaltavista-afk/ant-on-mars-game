@@ -45,8 +45,8 @@ let currentVehicleSkinIdx = 0, _currentChassisVisual = null
 const VEHICLE_PRESETS = [
   {
     name: 'TERRAIN VAN',
-    chassis: '/GLB/van.satelite.glb',
-    wheels: '/GLB/ruedacompresed.glb',
+    chassis: 'https://pub-6aa6b6baa3b043bf9598c7429620b422.r2.dev/van.satelite.glb',
+    wheels: 'https://pub-6aa6b6baa3b043bf9598c7429620b422.r2.dev/ruedacompresed.glb',
     chassisScale: 1.0,
     wheelScale: 0.49,
     chassisRotY: 0,
@@ -55,8 +55,8 @@ const VEHICLE_PRESETS = [
   },
   {
     name: 'SATELLITE VAN',
-    chassis: '/GLB/van.satelite.glb',
-    wheels: '/GLB/wheel.white.glb',
+    chassis: 'https://pub-6aa6b6baa3b043bf9598c7429620b422.r2.dev/van.satelite.glb',
+    wheels: 'https://pub-6aa6b6baa3b043bf9598c7429620b422.r2.dev/wheel.white.glb',
     chassisScale: 1.0,
     wheelScale: 0.49,
     chassisRotY: 0,
@@ -113,12 +113,13 @@ function createBiomeUniforms() {
 }
 
 // GLB Catalog — loaded dynamically from /GLB/manifest.json
+const GLB_CDN_BASE = 'https://pub-6aa6b6baa3b043bf9598c7429620b422.r2.dev'
 let GLB_CATALOG = []
 async function loadGLBCatalog() {
   try {
     const res = await fetch('/GLB/manifest.json')
     const files = await res.json()
-    GLB_CATALOG = files.map(f => ({ name: f.replace(/\.glb$/i,''), path: `/GLB/${f}`, thumb: '📦' }))
+    GLB_CATALOG = files.map(f => ({ name: f.replace(/\.glb$/i,''), path: `${GLB_CDN_BASE}/${f}`, thumb: '📦' }))
   } catch(e) { GLB_CATALOG = [] }
 }
 
@@ -2749,7 +2750,7 @@ async function loadAssetFromSave(assetData) {
   const path = assetData.originalFilename
   // Try to find the GLB in the catalog or from the path
   const catalogItem = GLB_CATALOG.find(c => c.name === assetData.originalFilename.replace(/\.glb$/i, ''))
-  const loadPath = catalogItem ? catalogItem.path : `/GLB/${assetData.originalFilename}`
+  const loadPath = catalogItem ? catalogItem.path : `${GLB_CDN_BASE}/${assetData.originalFilename}`
 
   const gltf = await new Promise((resolve, reject) => {
     gltfLoader.load(loadPath, resolve, undefined, reject)
