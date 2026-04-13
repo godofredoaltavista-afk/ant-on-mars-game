@@ -1,0 +1,420 @@
+/* Global CSS Variables + Reset */
+:root {
+  --mode-color: #00FFE0;  /* default gravity color — updated by setDriveMode() */
+  --panel-blur: blur(10px);
+  --panel-bg-default: rgba(0,0,0,0.0);
+  --panel-bg-hover: rgba(0,0,0,0.15);
+  --panel-bg-open-header: rgba(0,0,0,0.92);
+  --panel-bg-open-content: rgba(0,0,0,0.05);
+  --panel-border: 0.5px solid rgba(255,255,255,0.12);
+  --panel-border-lime: 0.5px solid rgba(180,255,80,0.45);
+  --panel-border-cyan: 0.5px solid rgba(0,255,224,0.35);
+  --panel-glow-cyan: 0 0 10px 1px rgba(0,255,224,0.35);
+  --panel-glow-lime: 0 0 10px 1px rgba(180,255,80,0.45);
+  --panel-glow-red: 0 0 10px 1px rgba(255,68,68,0.35);
+  --panel-glow-blue: 0 0 10px 1px rgba(0,170,255,0.35);
+  --panel-transition: all 0.22s cubic-bezier(0.4,0,0.2,1);
+  --color-lime: #B4FF50;
+  --color-cyan: #00FFE0;
+  --color-red: #FF4444;
+  --color-blue: #00AAFF;
+  --color-orange: #FF6B35;
+  --color-yellow: #FFB347;
+  --lime: #b8ff4a;
+  --cyan2: #00f5d4;
+  --bg-dark: #0a0a0a;
+  --panel-bg: rgba(10,10,10,0.92);
+  /* Design System Tokens */
+  --color-bg: rgba(10, 10, 20, 0.75);
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-accent: #00FFE0;
+  --color-danger: #C0392B;
+  --color-text: rgba(255, 255, 255, 0.9);
+  --blur: blur(12px);
+  --radius: 8px;
+  --padding-panel: 12px 16px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #000; font-family: 'Inter', sans-serif; }
+canvas { display: block; }
+
+/* Glass Panel System */
+.panel-glass {
+  background: var(--panel-bg-default);
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+  border: var(--panel-border);
+  border-radius: 2px;
+  transition: var(--panel-transition);
+}
+.panel-glass:hover { background: var(--panel-bg-hover); }
+.panel-glass[data-accent="cyan"] { border-color: rgba(0,255,224,0.35); }
+.panel-glass[data-accent="cyan"]:hover { box-shadow: var(--panel-glow-cyan); }
+.panel-glass[data-accent="lime"] { border-color: rgba(180,255,80,0.45); }
+.panel-glass[data-accent="lime"]:hover { box-shadow: var(--panel-glow-lime); }
+.panel-glass[data-accent="red"] { border-color: rgba(255,68,68,0.35); }
+.panel-glass[data-accent="red"]:hover { box-shadow: var(--panel-glow-red); }
+.panel-glass[data-accent="blue"] { border-color: rgba(0,170,255,0.35); }
+.panel-glass[data-accent="blue"]:hover { box-shadow: var(--panel-glow-blue); }
+
+/* Drive Mode Tabs */
+.drive-tab {
+  display: inline-block; padding: 5px 10px; font-size: 9px; letter-spacing: 0.1em;
+  cursor: pointer; border: 0.5px solid rgba(255,255,255,0.12); border-radius: 2px;
+  background: transparent; color: rgba(255,255,255,0.4);
+  transition: var(--panel-transition); margin-right: 3px;
+}
+/* Inactive state */
+.drive-tab:not(.active) {
+  background: transparent;
+  border-color: var(--color-border);
+  color: rgba(255,255,255,0.5);
+}
+/* Active state with glow */
+.drive-tab.active { background: var(--panel-bg-open-header); color: #fff; text-shadow: 0 0 8px currentColor; }
+.drive-tab[data-mode="gravity"].active { border-color: rgba(0,255,224,0.5); color: #00FFE0; box-shadow: var(--panel-glow-cyan); }
+.drive-tab[data-mode="magnetic"].active { border-color: rgba(0,170,255,0.5); color: #00AAFF; box-shadow: var(--panel-glow-blue); }
+.drive-tab[data-mode="hook"].active { border-color: rgba(255,68,68,0.5); color: #FF4444; box-shadow: var(--panel-glow-red); }
+.drive-tab[data-mode="float"].active { border-color: rgba(180,255,80,0.5); color: #B4FF50; box-shadow: var(--panel-glow-lime); }
+
+/* Teleport Menu */
+.tp-option:hover, .tp-row:hover { background: rgba(180,255,80,0.08); border-color: rgba(180,255,80,0.3); color: #B4FF50; }
+.tp-rename-btn:hover { color: rgba(0,170,255,1) !important; }
+.tp-delete-btn:hover { color: rgba(255,68,68,1) !important; }
+
+/* Save Buttons */
+.sw-save-btn:hover, .sw-load-btn:hover {
+  background: rgba(0,0,0,0.85) !important;
+  border-color: rgba(180,255,80,0.4) !important;
+  color: #B4FF50 !important;
+}
+#sw-export-btn:hover {
+  background: rgba(180,255,80,0.1) !important;
+  border-color: rgba(180,255,80,0.5) !important;
+  color: #B4FF50 !important;
+}
+.sw-add-btn:hover {
+  background: rgba(0,0,0,0.7); color: #fff;
+  border-color: rgba(255,255,255,0.3);
+}
+
+/* Constructor Panels */
+.ctor-panel { display: none; }
+.ctor-panel.visible { display: flex; }
+#ctor-catalog-list { max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; scrollbar-width: thin; scrollbar-color: rgba(184,255,74,0.2) transparent; }
+.ctor-drop-zone:hover, .ctor-drop-zone.drag-over {
+  border-color: var(--lime); color: var(--lime);
+  background: rgba(184,255,74,0.05);
+}
+.ctor-glb-slot:hover { border-color: rgba(184,255,74,0.3); background: rgba(184,255,74,0.05); }
+.ctor-glb-slot.active { border-color: var(--lime); background: rgba(184,255,74,0.1); }
+.ctor-glb-slot.loading { opacity: 0.6; pointer-events: none; }
+.ctor-slot-add:hover { background: rgba(184,255,74,0.15); border-color: var(--lime); }
+.ctor-mode-btn:hover { border-color: var(--cyan2); color: var(--cyan2); }
+.ctor-mode-btn.active { background: rgba(0,245,212,0.1); border-color: var(--cyan2); color: var(--cyan2); }
+.ctor-delete-btn:hover { background: rgba(255,50,50,0.15); border-color: rgba(255,100,100,0.5); color: #ff6464; }
+.ctor-obj-item:hover { border-color: rgba(0,245,212,0.3); background: rgba(0,245,212,0.05); }
+.ctor-obj-item.selected { border-color: var(--cyan2); background: rgba(0,245,212,0.08); color: var(--cyan2); }
+.ctor-obj-item-del:hover { color: #ff6464; }
+
+/* Gravity Tanks */
+@keyframes gravPulse {
+  from { box-shadow: 0 0 4px color-mix(in srgb, var(--mode-color, #00FFE0) 40%, transparent); }
+  to   { box-shadow: 0 0 12px color-mix(in srgb, var(--mode-color, #00FFE0) 90%, transparent), 0 0 4px color-mix(in srgb, var(--mode-color, #00FFE0) 60%, transparent); }
+}
+.gtank.full { background: var(--mode-color, #00FFE0) !important; box-shadow: 0 0 6px color-mix(in srgb, var(--mode-color, #00FFE0) 50%, transparent); }
+.gtank.active-pulse { animation: gravPulse 0.25s infinite alternate; }
+.gtank.empty { background: rgba(255,255,255,0.06) !important; }
+
+/* Toast Animations */
+@keyframes toastIn { from{opacity:0;transform:translate(-50%,8px)} to{opacity:1;transform:translate(-50%,0)} }
+@keyframes toastOut { to{opacity:0} }
+
+/* Telemetry — estilo canónico Frame button */
+.tel-label { color: rgba(255,255,255,0.45); }
+#hud-telemetry {
+  background: transparent !important;
+  border: 1px solid rgba(255,255,255,0.3) !important;
+  border-radius: 4px !important;
+  line-height: 1.6 !important;
+}
+#hud-telemetry.tel-open { background: rgba(0,0,0,0.15) !important; }
+#hud-telemetry.tel-open .tel-header .tel-arrow { transform: rotate(180deg); }
+#tel-body { display: none; margin-top: 6px; }
+#hud-telemetry.tel-open #tel-body { display: block; }
+.tel-header { cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* Settings Panel */
+#settings-toggle .dev-arrow { display: inline-block; transition: transform 0.25s ease; font-style: normal; }
+#settings-toggle.panel-open .dev-arrow { transform: rotate(180deg); }
+#settings-toggle:hover { background: transparent !important; backdrop-filter: blur(8px) !important; border-color: rgba(255,255,255,0.35) !important; color: rgba(255,255,255,0.95) !important; }
+#settings-toggle.panel-open { background: transparent !important; backdrop-filter: blur(8px) !important; border-color: rgba(255,255,255,0.35) !important; color: rgba(255,255,255,0.95) !important; }
+.folder { border-bottom: 1px solid rgba(255,255,255,0.03); }
+.folder-header { display: flex; align-items: center; gap: 6px; padding: 6px 12px; cursor: pointer; user-select: none; transition: background 0.15s; }
+.folder-header:hover { background: rgba(255,255,255,0.03); }
+.folder-chevron { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: rgba(255,255,255,0.3); transition: transform 0.2s ease; }
+.folder.open .folder-chevron { transform: rotate(90deg); }
+.folder-body { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+.folder.open .folder-body { max-height: 800px; }
+.ctrl-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; min-height: 26px; }
+.ctrl-label { font-size: 10.5px; color: rgba(200,215,235,0.55); font-weight: 400; white-space: nowrap; max-width: 100px; }
+.ctrl-slider { -webkit-appearance: none; appearance: none; width: 90px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.08); outline: none; cursor: pointer; }
+.ctrl-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 10px; height: 10px; border-radius: 50%; background: #00FFE0; border: 1.5px solid rgba(255,255,255,0.2); cursor: pointer; }
+.ctrl-check { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.03); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+.ctrl-check.active { background: rgba(100,160,240,0.25); border-color: rgba(100,160,240,0.5); }
+.ctrl-check.active::after { content: '✓'; font-size: 9px; color: rgba(140,190,255,0.9); }
+.ctrl-color { width: 22px; height: 16px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; position: relative; overflow: hidden; }
+.ctrl-color input { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); border: none; cursor: pointer; opacity: 0; }
+.ctrl-select { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; color: rgba(200,215,235,0.7); font-family: 'JetBrains Mono', monospace; font-size: 10px; padding: 3px 6px; cursor: pointer; outline: none; }
+.ctrl-select option { background: #1a2030; }
+
+/* Game HUD fade in constructor mode */
+.game-hud-element.ctor-faded { opacity: 0.15; pointer-events: none; }
+
+/* Buttons */
+#btn-orbital:hover { background: rgba(0,0,0,0.88) !important; border-color: rgba(255,255,255,0.35) !important; color: #fff !important; }
+#btn-minimap:hover { background: transparent !important; backdrop-filter: blur(8px) !important; border-color: rgba(255,255,255,0.35) !important; color: rgba(255,255,255,0.95) !important; }
+#btn-minimap.minimap-open { background: transparent !important; backdrop-filter: blur(8px) !important; border-color: rgba(255,255,255,0.35) !important; color: rgba(255,255,255,0.95) !important; }
+#btn-orbital.orbital-on { background: rgba(255,255,255,0.92) !important; color: #000 !important; border-color: rgba(255,255,255,0.9) !important; }
+#btn-orbital:active { cursor: grabbing; }
+
+/* Construct button */
+#construct-toggle:hover { background: rgba(10,10,10,0.88); border-color: var(--lime); box-shadow: 0 0 12px rgba(184,255,74,0.3); }
+#construct-toggle.active { background: rgba(184,255,74,0.15); color: var(--lime); border-color: var(--lime); box-shadow: 0 0 20px rgba(184,255,74,0.4), 0 0 6px rgba(184,255,74,0.2); }
+
+/* Hook crosshair */
+#hook-crosshair::before, #hook-crosshair::after { content: ''; position: absolute; background: #FF4444; }
+#hook-crosshair::before { width: 1px; height: 12px; left: 50%; top: 50%; transform: translate(-50%,-50%); }
+#hook-crosshair::after { width: 12px; height: 1px; left: 50%; top: 50%; transform: translate(-50%,-50%); }
+
+/* Scrollbar */
+.panel-scroll::-webkit-scrollbar { width: 4px; }
+.panel-scroll::-webkit-scrollbar-track { background: transparent; }
+.panel-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+/* Escape menu animation */
+@keyframes menuFadeIn { from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+
+/* Save modal */
+#save-modal input:focus { border-color: rgba(180,255,80,0.5) !important; }
+#save-modal button:hover { filter: brightness(1.2); }
+
+/* Import button hover */
+#sw-import-btn:hover { background: rgba(0,170,255,0.1) !important; border-color: rgba(0,170,255,0.5) !important; color: #00AAFF !important; }
+
+/* Minimap resize handle */
+.minimap-resize-handle { user-select: none; }
+
+/* ═══════════════════════════════════════════════════
+   WINDOWED / FRAMED MODE
+   Canvas shrinks into rounded frame with black chrome.
+   All panels stay position:fixed so they can float
+   freely anywhere — over canvas OR over black chrome.
+   The glass effect looks great in both zones.
+═══════════════════════════════════════════════════ */
+body.windowed-mode {
+  background: #080808;
+  overflow: visible;
+}
+
+/* Canvas clips itself with border-radius */
+body.windowed-mode canvas:not(#minimap-canvas) {
+  position: fixed !important;
+  top: 32px !important;
+  left: 32px !important;
+  width: calc(100vw - 64px) !important;
+  height: calc(100vh - 64px) !important;
+  border-radius: 20px;
+}
+
+/* Frame border overlay — sits on top of canvas edges */
+#game-frame { display: none; }
+body.windowed-mode #game-frame {
+  display: block;
+  position: fixed;
+  top: 32px; left: 32px; right: 32px; bottom: 32px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow:
+    0 0 0 32px #080808,
+    0 0 60px 20px rgba(0,0,0,0.8),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+  pointer-events: none;
+  z-index: 5000;
+}
+
+/* All panels remain freely draggable — no position overrides.
+   In frame mode they can live inside canvas OR in the black chrome.
+   Only enforce z-index above the frame border overlay. */
+body.windowed-mode #settings-panel,
+body.windowed-mode #settings-toggle,
+body.windowed-mode #hud-telemetry,
+body.windowed-mode #drive-mode-panel,
+body.windowed-mode #grav-tanks-hud,
+body.windowed-mode #minimap-panel,
+body.windowed-mode #btn-minimap,
+body.windowed-mode #save-worlds-panel,
+body.windowed-mode #ctor-panel-catalog,
+body.windowed-mode #ctor-panel-inspector,
+body.windowed-mode #trail-info,
+body.windowed-mode #south-hustles-info,
+body.windowed-mode #mode-indicator,
+body.windowed-mode #btn-orbital,
+body.windowed-mode #btn-orbital-wrapper,
+body.windowed-mode #btn-sun-wrapper,
+body.windowed-mode #btn-gravity-wrapper,
+body.windowed-mode #controls-wrap,
+body.windowed-mode #construct-toggle,
+body.windowed-mode #drive-toggle,
+body.windowed-mode #wasd-wrapper,
+body.windowed-mode #controls-info-bar,
+body.windowed-mode #worlds-toggle,
+body.windowed-mode #save-worlds-panel {
+  z-index: 5100 !important;
+}
+
+/* Frame toggle button — always visible above frame */
+#btn-windowed { z-index: 5200; }
+#btn-windowed.active {
+  background: rgba(255,255,255,0.1) !important;
+  border-color: rgba(255,255,255,0.3) !important;
+  color: #fff !important;
+}
+
+/* Make all glass panels slightly more transparent in windowed mode
+   so the dual-background glass effect is visible */
+body.windowed-mode .panel-glass {
+  background: rgba(0,0,0,0.45) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+body.windowed-mode #save-worlds-panel {
+  background: rgba(0,0,0,0.45) !important;
+  backdrop-filter: blur(20px) !important;
+}
+body.windowed-mode #hud-telemetry {
+  background: transparent !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ZONE SYSTEM STYLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Pulse animation for highlighted buttons */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Zone highlight state for buttons */
+.highlight {
+  animation: pulse 1s infinite !important;
+}
+
+/* Locked state for buttons */
+.locked {
+  pointer-events: none !important;
+  opacity: 0.3 !important;
+}
+
+/* Floating text panel styles */
+.floating-text-panel {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  z-index: 2500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-content {
+  background: rgba(10, 10, 20, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+  font-family: 'Share Tech Mono', monospace;
+  color: #fff;
+}
+
+.modal-content.dark {
+  background: rgba(10, 10, 20, 0.95);
+  border-color: rgba(0, 255, 224, 0.3);
+}
+
+.modal-content.light {
+  background: rgba(240, 240, 240, 0.95);
+  border-color: rgba(0, 0, 0, 0.2);
+  color: #111;
+}
+
+/* Zone config panel */
+#ctor-panel-zones {
+  position: fixed;
+  top: 60px;
+  right: 280px;
+  z-index: 1800;
+  width: 280px;
+  background: rgba(10, 10, 10, 0.92);
+  border: 1px solid rgba(184, 255, 74, 0.2);
+  border-radius: 8px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: #ccc;
+  backdrop-filter: blur(16px);
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+  user-select: none;
+  display: none;
+}
+
+#ctor-panel-zones.visible {
+  display: flex;
+}
+
+/* Zone list items */
+.zone-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.zone-list-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.zone-list-item.selected {
+  background: rgba(0, 255, 224, 0.1);
+  border-left: 2px solid #00FFE0;
+}
+
+/* Zone color indicator dot */
+.zone-color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}

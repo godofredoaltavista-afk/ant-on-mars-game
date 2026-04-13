@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ANT ON MARS</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Bebas+Neue&family=Syne:wght@800&family=Instrument+Serif&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
+</head>
+<body>
+  <!-- Loader -->
+  <div id="loader" style="position:fixed;inset:0;z-index:9999;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Share Tech Mono',monospace;transition:opacity 0.6s ease;">
+    <div style="font-size:11px;color:#00FFE0;letter-spacing:0.3em;margin-bottom:24px;opacity:0.6;">ANT ON MARS // ENGINE BOOT</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:64px;color:#fff;letter-spacing:4px;line-height:1;">ANT ON MARS</div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.3);letter-spacing:0.2em;margin-top:8px;margin-bottom:40px;">GAUSSIAN SPLAT WORLD ENGINE</div>
+    <div style="width:240px;height:2px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;">
+      <div id="loader-bar" style="width:0%;height:100%;background:#00FFE0;transition:width 0.4s ease;"></div>
+    </div>
+    <div id="loader-status" style="font-size:10px;color:#00FFE0;margin-top:12px;letter-spacing:0.2em;opacity:0.7;">INITIALIZING PHYSICS…</div>
+  </div>
+
+  <!-- Telemetry HUD -->
+  <div id="hud-telemetry" class="panel-glass game-hud-element" style="position:fixed;top:16px;left:16px;z-index:1000;font-family:'Share Tech Mono',monospace;font-size:11px;color:#00FFE0;padding:8px 12px;min-width:190px;">
+    <div class="tel-header" id="tel-toggle-btn"><span>TELEMETRY</span><span class="tel-arrow">▼</span></div>
+    <div id="tel-body">
+      <div style="height:4px;"></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">SPEED</span><span id="hud-speed">0.000 m/s</span></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">TURN</span><span id="hud-turn">0.0°</span></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">HDG</span><span id="hud-hdg">0.0°</span></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">TILT</span><span id="hud-tilt">0.0°</span></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">TERRAIN</span><span id="hud-terrain">CLEAR</span></div>
+      <div style="height:1px;background:rgba(0,255,224,0.1);margin:4px 0;"></div>
+      <div style="font-size:9px;color:rgba(255,255,255,0.3);">DIST: <span id="hud-dist">0.00m</span> · TIME: <span id="hud-time">0.0s</span></div>
+      <div style="font-size:9px;color:rgba(255,255,255,0.3);">AVG: <span id="hud-avg">0.000 m/s</span></div>
+      <div style="height:1px;background:rgba(0,255,224,0.1);margin:4px 0;"></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">GRAV</span><span id="hud-antigrav">NORMAL</span></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">MODE</span><span id="hud-mode" style="font-weight:700;color:#00FFE0;">GRAVITY</span></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">POS</span><span id="hud-pos" style="font-size:9px;">0 / 0 / 0</span></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">ZONE</span><span id="hud-zone" style="font-weight:700;">—</span></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">UNLOCKED</span><span id="hud-unlocked" style="font-weight:700;">0 / 4</span></div>
+      <div style="display:flex;justify-content:space-between;gap:24px;"><span class="tel-label">SESSION</span><span id="hud-session" style="font-weight:700;">00:00</span></div>
+    </div>
+  </div>
+
+  <!-- Drive Mode Panel -->
+  <div id="drive-mode-panel" class="panel-glass game-hud-element" data-accent="cyan" style="position:fixed;bottom:80px;left:16px;z-index:1100;font-family:'Share Tech Mono',monospace;">
+    <div class="panel-glass-header" style="font-size:10px;color:rgba(255,255,255,0.5);padding:4px 8px;">DRIVE MODE</div>
+    <div style="display:flex;gap:3px;padding:4px 6px;">
+      <div class="drive-tab active" data-mode="gravity">GRAVITY [G]</div>
+      <div class="drive-tab" data-mode="magnetic">MAGNETIC [Z]</div>
+      <div class="drive-tab" data-mode="hook">HOOK [H]</div>
+      <div class="drive-tab" data-mode="float">FLOAT [F]</div>
+    </div>
+    <div class="drive-mode-info" id="drive-mode-info" style="color:rgba(0,255,224,0.6);font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.1em;padding:4px 6px;">
+      <span id="drive-mode-status">GRAVITY · NORMAL</span>
+    </div>
+  </div>
+
+  <!-- Gravity Tanks -->
+  <div id="grav-tanks-hud" style="position:fixed;bottom:170px;left:16px;z-index:1100;display:flex;flex-direction:column;gap:3px;padding:6px 8px;background:rgba(0,0,0,0.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.3);border-radius:6px;pointer-events:auto;cursor:grab;user-select:none;">
+    <div id="grav-tanks-title" style="font-size:10px;color:rgba(0,255,224,0.35);letter-spacing:0.15em;margin-bottom:2px;text-align:center;">GRAV TANKS</div>
+    <div style="display:flex;gap:4px;align-items:flex-end;justify-content:center;">
+      <div class="gtank" id="gtank-0" style="width:8px;height:28px;border-radius:3px;background:rgba(0,255,224,0.15);transition:all 0.3s;"></div>
+      <div class="gtank" id="gtank-1" style="width:8px;height:28px;border-radius:3px;background:rgba(0,255,224,0.15);transition:all 0.3s;"></div>
+      <div class="gtank" id="gtank-2" style="width:8px;height:28px;border-radius:3px;background:rgba(0,255,224,0.15);transition:all 0.3s;"></div>
+      <div class="gtank" id="gtank-3" style="width:8px;height:28px;border-radius:3px;background:rgba(0,255,224,0.15);transition:all 0.3s;"></div>
+      <div class="gtank" id="gtank-4" style="width:8px;height:28px;border-radius:3px;background:rgba(0,255,224,0.15);transition:all 0.3s;"></div>
+    </div>
+    <div id="grav-timer-bar-wrap" style="display:none;height:3px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-top:2px;">
+      <div id="grav-timer-bar" style="height:100%;width:100%;background:#00f5d4;transition:width 0.1s linear;"></div>
+    </div>
+    <div id="grav-tank-count" style="font-size:7px;color:rgba(0,255,224,0.4);text-align:center;margin-top:1px;">5 / 5</div>
+    <button id="antigrav-btn" style="margin-top:4px;width:100%;padding:4px 0;font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.1em;background:transparent;border:1px solid rgba(255,255,255,0.3);color:rgba(255,255,255,0.6);border-radius:3px;cursor:pointer;transition:all 0.2s;white-space:nowrap;">ANTIGRAV [G]</button>
+  </div>
+
+  <!-- Settings -->
+  <button id="settings-toggle" title="Developer Settings" style="position:fixed;top:16px;right:16px;z-index:2001;height:36px;padding:0 16px;border-radius:4px;background:rgba(0,0,0,0.88);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.14);color:rgba(255,255,255,0.75);font-size:10px;letter-spacing:0.14em;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:all 0.2s ease;font-family:'Share Tech Mono',monospace;white-space:nowrap;">DEVELOPER <i class="dev-arrow">↓</i></button>
+  <div id="settings-panel" class="hidden" style="position:fixed;top:60px;right:16px;z-index:1999;width:280px;max-height:calc(100vh - 32px);background:rgba(12,16,24,0.82);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden;font-family:'Inter',sans-serif;color:#E8E8E0;font-size:11px;transition:opacity 0.25s ease,transform 0.25s ease;display:flex;flex-direction:column;opacity:0;pointer-events:none;transform:translateX(10px) scale(0.97);">
+    <div class="panel-header" id="settings-panel-header" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px 8px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:grab;"><h2 style="font-size:12px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:rgba(255,255,255,0.5);">Settings</h2><button class="panel-close" id="panel-close" style="width:24px;height:24px;border-radius:6px;background:rgba(255,255,255,0.05);border:none;color:rgba(255,255,255,0.4);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;">✕</button></div>
+    <div class="panel-scroll" id="panel-scroll" style="overflow-y:auto;flex:1;padding:6px 0;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.1) transparent;"></div>
+  </div>
+
+  <!-- Constructor Mode -->
+  <div id="constructor-mode-bar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:2030;font-family:'Share Tech Mono',monospace;font-size:10px;color:#b8ff4a;background:rgba(10,10,10,0.9);border-bottom:1px solid rgba(184,255,74,0.3);padding:5px 16px;letter-spacing:0.12em;align-items:center;gap:12px;">
+    <span>◈ CONSTRUCTOR MODE</span>
+    <span style="color:rgba(255,255,255,0.3);">·</span>
+    <button id="ctor-add-zone-btn" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;padding:3px 10px;background:rgba(0,255,224,0.1);border:1px solid rgba(0,255,224,0.4);color:#00FFE0;border-radius:3px;cursor:pointer;transition:all 0.2s;">+ ADD ZONE</button>
+    <!-- Zone size selection -->
+    <span style="color:rgba(255,255,255,0.3);">·</span>
+    <span style="font-size:8px;color:rgba(255,255,255,0.4);">ZONE SIZE:</span>
+    <button class="zone-size-btn" data-size="xs" style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.1em;padding:2px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4);border-radius:3px;cursor:pointer;transition:all 0.2s;">XS</button>
+    <button class="zone-size-btn active" data-size="md" style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.1em;padding:2px 8px;background:rgba(0,255,224,0.15);border:1px solid rgba(0,255,224,0.4);color:#00FFE0;border-radius:3px;cursor:pointer;transition:all 0.2s;">MD</button>
+    <button class="zone-size-btn" data-size="xl" style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.1em;padding:2px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4);border-radius:3px;cursor:pointer;transition:all 0.2s;">XL</button>
+    <span style="color:rgba(255,255,255,0.3);">·</span>
+    <button id="ctor-export-zones-btn" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;padding:3px 10px;background:rgba(180,255,80,0.1);border:1px solid rgba(180,255,80,0.3);color:#B4FF50;border-radius:3px;cursor:pointer;transition:all 0.2s;">↓ EXPORT ZONES</button>
+    <button id="ctor-import-zones-btn" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;padding:3px 10px;background:rgba(0,170,255,0.1);border:1px solid rgba(0,170,255,0.3);color:#00AAFF;border-radius:3px;cursor:pointer;transition:all 0.2s;">↑ IMPORT ZONES</button>
+    <input type="file" id="ctor-import-zones-input" style="display:none;" accept=".json" />
+    <span style="color:rgba(255,255,255,0.3);">·</span>
+    <span>Click terreno para colocar · Click objeto para seleccionar · G mover · R rotar · S escalar · Esc deselect · Tab salir</span>
+  </div>
+  <!-- Constructor Panels -->
+  <div id="ctor-panel-catalog" class="ctor-panel" style="position:fixed;top:60px;left:220px;z-index:1800;width:260px;background:rgba(10,10,10,0.92);border:1px solid rgba(184,255,74,0.2);border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:10px;color:#ccc;backdrop-filter:blur(16px);flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.7);user-select:none;">
+    <div class="ctor-panel-header" id="ctor-catalog-drag" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(184,255,74,0.06);border-bottom:1px solid rgba(184,255,74,0.15);cursor:grab;letter-spacing:0.12em;"><span class="ctor-panel-title" style="font-family:'Syne',monospace;font-weight:800;font-size:11px;color:#b8ff4a;">◈ GLB CATALOG</span><button class="ctor-panel-close" id="ctor-catalog-close" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;font-size:13px;padding:0;line-height:1;">✕</button></div>
+    <div class="ctor-panel-body" style="padding:10px;display:flex;flex-direction:column;gap:8px;">
+      <div class="ctor-drop-zone" id="ctor-drop-zone" style="border:1px dashed rgba(184,255,74,0.35);border-radius:4px;padding:12px 8px;text-align:center;color:rgba(184,255,74,0.5);font-size:9px;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;">◆ DROP .GLB HERE<br><span style="color:rgba(184,255,74,0.3);font-size:8px;">o hacé click para explorar</span></div>
+      <input type="file" id="ctor-file-input" style="display:none;" accept=".glb" />
+      <div class="ctor-loading-msg" id="ctor-loading-msg" style="color:#b8ff4a;font-size:9px;letter-spacing:0.1em;text-align:center;padding:6px 0;display:none;">◌ CARGANDO…</div>
+      <div class="ctor-progress" id="ctor-progress" style="height:2px;background:rgba(255,255,255,0.08);border-radius:1px;overflow:hidden;display:none;"><div class="ctor-progress-bar" id="ctor-progress-bar" style="height:100%;background:#b8ff4a;width:0%;transition:width 0.2s ease;"></div></div>
+      <div style="font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.1em;margin-top:4px;">CATÁLOGO LOCAL</div>
+      <div id="ctor-catalog-list"></div>
+      <div style="font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.1em;margin-top:8px;">OBJETOS EN ESCENA</div>
+      <div class="ctor-obj-list" id="ctor-obj-list" style="display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(184,255,74,0.2) transparent;"><div style="color:rgba(255,255,255,0.2);font-size:9px;text-align:center;padding:8px;">ninguno aún</div></div>
+    </div>
+  </div>
+
+  <div id="ctor-panel-inspector" class="ctor-panel" style="position:fixed;top:60px;right:280px;z-index:1800;width:260px;background:rgba(10,10,10,0.92);border:1px solid rgba(184,255,74,0.2);border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:10px;color:#ccc;backdrop-filter:blur(16px);flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.7);user-select:none;">
+    <div class="ctor-panel-header" id="ctor-inspector-drag" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(184,255,74,0.06);border-bottom:1px solid rgba(184,255,74,0.15);cursor:grab;letter-spacing:0.12em;"><span class="ctor-panel-title" id="ctor-inspector-title" style="font-family:'Syne',monospace;font-weight:800;font-size:11px;color:#b8ff4a;">◎ OBJETO</span><button class="ctor-panel-close" id="ctor-inspector-close" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;font-size:13px;padding:0;line-height:1;">✕</button></div>
+    <div class="ctor-panel-body" style="padding:10px;display:flex;flex-direction:column;gap:8px;">
+      <div class="ctor-inspector-row" style="display:flex;align-items:center;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><span class="ctor-inspector-label" style="color:rgba(0,245,212,0.5);font-size:9px;letter-spacing:0.1em;min-width:50px;">POS</span><div class="ctor-inspector-xyz" style="display:flex;gap:6px;"><span class="axis-label" style="color:rgba(255,255,255,0.2);font-size:8px;">X</span><span id="ctor-pos-x" class="ctor-inspector-value" style="color:#00f5d4;font-size:10px;font-family:'JetBrains Mono','Share Tech Mono',monospace;">0.00</span><span class="axis-label" style="color:rgba(255,255,255,0.2);font-size:8px;">Y</span><span id="ctor-pos-y" class="ctor-inspector-value" style="color:#00f5d4;font-size:10px;font-family:'JetBrains Mono','Share Tech Mono',monospace;">0.00</span><span class="axis-label" style="color:rgba(255,255,255,0.2);font-size:8px;">Z</span><span id="ctor-pos-z" class="ctor-inspector-value" style="color:#00f5d4;font-size:10px;font-family:'JetBrains Mono','Share Tech Mono',monospace;">0.00</span></div></div>
+      <div class="ctor-inspector-row" style="display:flex;align-items:center;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><span class="ctor-inspector-label" style="color:rgba(0,245,212,0.5);font-size:9px;letter-spacing:0.1em;min-width:50px;">ROT</span><div class="ctor-inspector-xyz" style="display:flex;gap:6px;"><span class="axis-label" style="color:rgba(255,255,255,0.2);font-size:8px;">X</span><span id="ctor-rot-x" class="ctor-inspector-value" style="color:#00f5d4;font-size:10px;font-family:'JetBrains Mono','Share Tech Mono',monospace;">0°</span><span class="axis-label" style="color:rgba(255,255,255,0.2);font-size:8px;">Y</span><span id="ctor-rot-y" class="ctor-inspector-value" style="color:#00f5d4;font-size:10px;font-family:'JetBrains Mono','Share Tech Mono',monospace;">0°</span><span class="axis-label" style="color:rgba(255,255,255,0.2);font-size:8px;">Z</span><span id="ctor-rot-z" class="ctor-inspector-value" style="color:#00f5d4;font-size:10px;font-family:'JetBrains Mono','Share Tech Mono',monospace;">0°</span></div></div>
+      <!-- Rotation sliders -->
+      <div style="font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.1em;margin-top:6px;">ROTATION</div>
+      <div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+        <span style="color:rgba(0,245,212,0.5);font-size:9px;min-width:14px;">X</span>
+        <input type="range" id="ctor-rot-slider-x" min="0" max="360" step="1" value="0" class="ctor-scale-slider" style="flex:1;" />
+        <span id="ctor-rot-val-x" style="color:#00f5d4;font-size:10px;min-width:32px;text-align:right;">0°</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+        <span style="color:rgba(0,245,212,0.5);font-size:9px;min-width:14px;">Y</span>
+        <input type="range" id="ctor-rot-slider-y" min="0" max="360" step="1" value="0" class="ctor-scale-slider" style="flex:1;" />
+        <span id="ctor-rot-val-y" style="color:#00f5d4;font-size:10px;min-width:32px;text-align:right;">0°</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+        <span style="color:rgba(0,245,212,0.5);font-size:9px;min-width:14px;">Z</span>
+        <input type="range" id="ctor-rot-slider-z" min="0" max="360" step="1" value="0" class="ctor-scale-slider" style="flex:1;" />
+        <span id="ctor-rot-val-z" style="color:#00f5d4;font-size:10px;min-width:32px;text-align:right;">0°</span>
+      </div>
+      <!-- Elevation slider -->
+      <div style="font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.1em;margin-top:6px;">ELEVATION</div>
+      <div class="ctor-inspector-row" style="display:flex;align-items:center;gap:6px;">
+        <span class="ctor-inspector-label" style="color:rgba(0,245,212,0.5);font-size:9px;letter-spacing:0.1em;min-width:50px;">Y POS</span>
+        <input type="range" class="ctor-scale-slider" id="ctor-elev-slider" min="-10" max="50" step="0.1" value="0" style="flex:1;" />
+        <span id="ctor-elev-val" class="ctor-inspector-value" style="color:#00f5d4;font-size:10px;min-width:32px;text-align:right;">0.0</span>
+      </div>
+      <!-- Transform mode buttons (hidden, referenced by JS) -->
+      <button id="ctor-btn-translate" style="display:none"></button>
+      <button id="ctor-btn-rotate" style="display:none"></button>
+      <button id="ctor-btn-scale" style="display:none"></button>
+      <div class="ctor-inspector-row" style="display:flex;align-items:center;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><span class="ctor-inspector-label" style="color:rgba(0,245,212,0.5);font-size:9px;letter-spacing:0.1em;min-width:50px;">SCALE</span><span id="ctor-scale-val" class="ctor-inspector-value" style="color:#00f5d4;font-size:10px;font-family:'JetBrains Mono','Share Tech Mono',monospace;">1.0x</span></div>
+      <input type="range" class="ctor-scale-slider" id="ctor-scale-slider" min="0" max="100" step="0.5" value="37" style="-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;background:rgba(255,255,255,0.08);outline:none;cursor:pointer;" />
+      <!-- Progress bar for GLB loading -->
+      <div id="ctor-progress" style="display:none;height:2px;background:rgba(255,255,255,0.08);border-radius:1px;overflow:hidden;margin-top:4px;"><div id="ctor-progress-bar" style="height:100%;background:#b8ff4a;width:0%;transition:width 0.2s ease;"></div></div>
+      <div style="font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.1em;margin:8px 0 4px;">COLLISION PHYSICS</div>
+      <div class="ctor-mode-btns" style="display:flex;gap:4px;"><button class="ctor-mode-btn active" id="ctor-col-none" style="flex:1;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.08em;padding:5px 0;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.5);border-radius:3px;cursor:pointer;transition:all 0.15s;">NONE</button><button class="ctor-mode-btn" id="ctor-col-convex" style="flex:1;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.08em;padding:5px 0;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.5);border-radius:3px;cursor:pointer;transition:all 0.15s;">CONVEX</button><button class="ctor-mode-btn" id="ctor-col-trimesh" style="flex:1;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.08em;padding:5px 0;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.5);border-radius:3px;cursor:pointer;transition:all 0.15s;">TRIMESH</button></div>
+      <div id="ctor-col-status" style="font-size:8px;color:rgba(0,245,212,0.35);margin-top:3px;text-align:center;letter-spacing:0.08em;">sin colisión</div>
+      <button class="ctor-delete-btn" id="ctor-delete-btn" style="width:100%;padding:6px;margin-top:4px;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;background:rgba(255,50,50,0.08);border:1px solid rgba(255,50,50,0.25);color:rgba(255,100,100,0.7);border-radius:3px;cursor:pointer;transition:all 0.15s;">✕ DELETE OBJECT</button>
+    </div>
+  </div>
+
+  <!-- Save/Load Panel - 6 slots in 3x2 grid -->
+  <!-- World panel toggle button -->
+  <button id="worlds-toggle" style="position:fixed;bottom:16px;right:16px;z-index:1102;height:36px;padding:0 12px;border-radius:4px;background:rgba(0,0,0,0.88);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.14);color:rgba(255,255,255,0.75);font-size:10px;letter-spacing:0.14em;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:all 0.2s ease;font-family:'Share Tech Mono',monospace;white-space:nowrap;"><img src="/art/icons/icon-world.png" onerror="this.style.display='none'" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;opacity:0.7;"/>WORLD <i id="worlds-arrow">↑</i></button>
+
+  <div id="save-worlds-panel" class="panel-glass" style="display:none;position:fixed;bottom:60px;right:16px;z-index:1100;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;overflow:hidden;width:420px;">
+
+    <!-- SAVE row — compact buttons -->
+    <div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.06);">
+      <span style="color:rgba(255,255,255,0.3);font-size:10px;letter-spacing:0.15em;">WORLD</span>
+      <div id="sw-save-row" style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:6px;">
+        <button class="sw-save-btn" data-slot="1" style="padding:6px 4px;background:transparent;color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.08em;transition:all 0.18s;">SAVE 1</button>
+        <button class="sw-save-btn" data-slot="2" style="padding:6px 4px;background:transparent;color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.08em;transition:all 0.18s;">SAVE 2</button>
+        <button class="sw-save-btn" data-slot="3" style="padding:6px 4px;background:transparent;color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.08em;transition:all 0.18s;">SAVE 3</button>
+        <button class="sw-save-btn" data-slot="4" style="padding:6px 4px;background:transparent;color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.08em;transition:all 0.18s;">SAVE 4</button>
+        <button class="sw-save-btn" data-slot="5" style="padding:6px 4px;background:transparent;color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.08em;transition:all 0.18s;">SAVE 5</button>
+        <button class="sw-save-btn" data-slot="6" style="padding:6px 4px;background:transparent;color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.08em;transition:all 0.18s;">SAVE 6</button>
+      </div>
+    </div>
+
+    <!-- LOAD row — thumbnails 3:1 + load button -->
+    <div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);">
+      <span style="color:rgba(255,255,255,0.3);font-size:10px;letter-spacing:0.15em;">LOAD</span>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px;">
+        <!-- Slot 1 -->
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div id="sw-thumb-1" style="position:relative;width:100%;aspect-ratio:3/1;background:#0a0a0a;border:1px solid rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+            <img id="sw-thumb-img-1" src="/art/worlds/world-1.png" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:auto;"/>
+            <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.6) 0%,transparent 60%);pointer-events:none;"></div>
+            <div style="position:absolute;bottom:2px;left:4px;font-size:6px;color:rgba(255,255,255,0.35);letter-spacing:0.1em;" id="sw-name-1">—</div>
+          </div>
+          <button class="sw-load-btn" data-slot="1" id="sw-load-1" style="padding:5px 4px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;transition:all 0.18s;">SLOT 1</button>
+        </div>
+        <!-- Slot 2 -->
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div id="sw-thumb-2" style="position:relative;width:100%;aspect-ratio:3/1;background:#0a0a0a;border:1px solid rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+            <img id="sw-thumb-img-2" src="/art/worlds/world-2.png" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:auto;"/>
+            <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.6) 0%,transparent 60%);pointer-events:none;"></div>
+            <div style="position:absolute;bottom:2px;left:4px;font-size:6px;color:rgba(255,255,255,0.35);letter-spacing:0.1em;" id="sw-name-2">—</div>
+          </div>
+          <button class="sw-load-btn" data-slot="2" id="sw-load-2" style="padding:5px 4px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;transition:all 0.18s;">SLOT 2</button>
+        </div>
+        <!-- Slot 3 -->
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div id="sw-thumb-3" style="position:relative;width:100%;aspect-ratio:3/1;background:#0a0a0a;border:1px solid rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+            <img id="sw-thumb-img-3" src="/art/worlds/world-3.png" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:auto;"/>
+            <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.6) 0%,transparent 60%);pointer-events:none;"></div>
+            <div style="position:absolute;bottom:2px;left:4px;font-size:6px;color:rgba(255,255,255,0.35);letter-spacing:0.1em;" id="sw-name-3">—</div>
+          </div>
+          <button class="sw-load-btn" data-slot="3" id="sw-load-3" style="padding:5px 4px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;transition:all 0.18s;">SLOT 3</button>
+        </div>
+        <!-- Slot 4 -->
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div id="sw-thumb-4" style="position:relative;width:100%;aspect-ratio:3/1;background:#0a0a0a;border:1px solid rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+            <img id="sw-thumb-img-4" src="/art/worlds/world-4.png" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:auto;"/>
+            <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.6) 0%,transparent 60%);pointer-events:none;"></div>
+            <div style="position:absolute;bottom:2px;left:4px;font-size:6px;color:rgba(255,255,255,0.35);letter-spacing:0.1em;" id="sw-name-4">—</div>
+          </div>
+          <button class="sw-load-btn" data-slot="4" id="sw-load-4" style="padding:5px 4px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;transition:all 0.18s;">SLOT 4</button>
+        </div>
+        <!-- Slot 5 -->
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div id="sw-thumb-5" style="position:relative;width:100%;aspect-ratio:3/1;background:#0a0a0a;border:1px solid rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+            <img id="sw-thumb-img-5" src="/art/worlds/world-5.png" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:auto;"/>
+            <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.6) 0%,transparent 60%);pointer-events:none;"></div>
+            <div style="position:absolute;bottom:2px;left:4px;font-size:6px;color:rgba(255,255,255,0.35);letter-spacing:0.1em;" id="sw-name-5">—</div>
+          </div>
+          <button class="sw-load-btn" data-slot="5" id="sw-load-5" style="padding:5px 4px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;transition:all 0.18s;">SLOT 5</button>
+        </div>
+        <!-- Slot 6 -->
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div id="sw-thumb-6" style="position:relative;width:100%;aspect-ratio:3/1;background:#0a0a0a;border:1px solid rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+            <img id="sw-thumb-img-6" src="/art/worlds/world-6.png" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:auto;"/>
+            <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.6) 0%,transparent 60%);pointer-events:none;"></div>
+            <div style="position:absolute;bottom:2px;left:4px;font-size:6px;color:rgba(255,255,255,0.35);letter-spacing:0.1em;" id="sw-name-6">—</div>
+          </div>
+          <button class="sw-load-btn" data-slot="6" id="sw-load-6" style="padding:5px 4px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;transition:all 0.18s;">SLOT 6</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Export/Import -->
+    <div style="padding:6px 12px;display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap;">
+      <button id="sw-import-all-btn" style="padding:5px 10px;background:transparent;color:rgba(0,170,255,0.6);border:1px solid rgba(0,170,255,0.3);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;transition:all 0.15s;" title="Import ALL worlds from JSON file">↑ IMPORT ALL</button>
+      <button id="sw-import-btn" style="padding:5px 10px;background:transparent;color:rgba(0,170,255,0.5);border:1px solid rgba(0,170,255,0.2);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;transition:all 0.15s;" title="Import world from JSON file">↑ IMPORT</button>
+      <button id="sw-export-btn" style="padding:5px 10px;background:transparent;color:rgba(180,255,80,0.5);border:1px solid rgba(180,255,80,0.2);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;transition:all 0.15s;" title="Export current world state as JSON">↓ EXPORT WORLD</button>
+      <button id="sw-export-all-btn" style="padding:5px 10px;background:transparent;color:rgba(180,255,80,0.6);border:1px solid rgba(180,255,80,0.3);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;transition:all 0.15s;" title="Export ALL worlds to JSON file">↓ EXPORT ALL</button>
+    </div>
+    <input type="file" id="sw-import-input" style="display:none;" accept=".json" />
+    <input type="file" id="sw-import-all-input" style="display:none;" accept=".json" />
+  </div>
+
+  <!-- Teleport Menu -->
+  <div id="respawn-loader" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2000;pointer-events:none;flex-direction:column;align-items:center;gap:12px;">
+    <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:60px;height:60px;">
+      <circle cx="30" cy="30" r="25" stroke="rgba(180,255,80,0.15)" stroke-width="3"/>
+      <circle id="respawn-arc" cx="30" cy="30" r="25" stroke="#B4FF50" stroke-width="3" stroke-linecap="round" fill="none" style="stroke-dasharray:157;stroke-dashoffset:157;transition:stroke-dashoffset 0.05s linear;transform-origin:30px 30px;transform:rotate(-90deg);"/>
+      <text x="30" y="34" text-anchor="middle" fill="#B4FF50" font-family="'Share Tech Mono',monospace" font-size="11" letter-spacing="1">R</text>
+    </svg>
+    <div class="rl-text" style="font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(180,255,80,0.7);letter-spacing:0.2em;">HOLD TO TELEPORT</div>
+  </div>
+  <div id="teleport-menu" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1500;font-family:'Share Tech Mono',monospace;background:rgba(10,10,20,0.75);backdrop-filter:blur(16px);border:0.5px solid rgba(180,255,80,0.3);border-radius:8px;padding:16px 20px;min-width:280px;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+    <div style="font-size:9px;color:rgba(180,255,80,0.6);letter-spacing:0.2em;margin-bottom:10px;">◆ TELEPORT</div>
+    <div id="tp-content"></div>
+    <div style="font-size:8px;color:rgba(255,255,255,0.25);margin-top:10px;letter-spacing:0.1em;border-top:0.5px solid rgba(255,255,255,0.06);padding-top:8px;">[ESC] CANCELAR</div>
+  </div>
+
+  <!-- Zone Capture HUD -->
+  <div id="zone-capture-hud" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1200;font-family:'Share Tech Mono',monospace;text-align:center;pointer-events:none;">
+    <div id="zone-capture-label" style="font-size:11px;letter-spacing:0.2em;color:rgba(0,255,224,0.9);margin-bottom:8px;text-shadow:0 0 10px rgba(0,255,224,0.4);">ZONA 1</div>
+    <div style="width:200px;height:3px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;"><div id="zone-capture-bar" style="height:100%;width:0%;background:#00ffe0;transition:width 0.1s linear;"></div></div>
+    <div style="font-size:8px;color:rgba(255,255,255,0.3);letter-spacing:0.15em;margin-top:5px;">MANTÉN POSICIÓN</div>
+  </div>
+
+  <!-- Minimap / TOP VIEW — 3D scissor render, transparent panel -->
+  <button id="btn-minimap" style="position:fixed;top:60px;right:16px;z-index:1102;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:7px 14px;background:rgba(0,0,0,0.82);color:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.12);border-radius:4px;cursor:pointer;backdrop-filter:blur(12px);transition:all 0.2s ease;">MAP [M]</button>
+  <div id="minimap-panel" style="display:none;position:fixed;top:104px;right:16px;z-index:1101;width:320px;height:320px;background:transparent;border:1px solid rgba(255,255,255,0.6);border-radius:6px;overflow:hidden;pointer-events:auto;user-select:none;">
+    <!-- Header bar — semi-transparent over the 3D render -->
+    <div id="minimap-label" style="position:absolute;top:0;left:0;right:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.5);letter-spacing:0.15em;cursor:grab;pointer-events:auto;background:rgba(0,0,0,0.35);backdrop-filter:blur(4px);">
+      <span>TOP VIEW</span>
+      <div style="display:flex;align-items:center;gap:6px;pointer-events:auto;">
+        <button id="btn-right-view" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.55);cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:7px;letter-spacing:0.1em;padding:2px 6px;border-radius:3px;line-height:1.4;pointer-events:auto;transition:all 0.15s;" title="Open Right View">+ RIGHT</button>
+        <button id="minimap-close" style="background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:11px;padding:0;line-height:1;pointer-events:auto;">✕</button>
+      </div>
+    </div>
+    <!-- Resize handle at bottom-left corner -->
+    <div id="minimap-resize-handle" style="position:absolute;bottom:0;left:0;width:16px;height:16px;cursor:nesw-resize;pointer-events:auto;z-index:4;background:linear-gradient(225deg,transparent 50%,rgba(255,255,255,0.4) 50%);"></div>
+  </div>
+
+  <!-- Right View — 3D side-view scissor render panel -->
+  <div id="right-view-panel" style="display:none;position:fixed;top:104px;left:16px;z-index:1100;width:320px;height:320px;background:transparent;border:1px solid rgba(0,255,224,0.5);border-radius:6px;overflow:hidden;pointer-events:auto;user-select:none;">
+    <div id="right-view-label" style="position:absolute;top:0;left:0;right:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(0,255,224,0.6);letter-spacing:0.15em;cursor:grab;pointer-events:auto;background:rgba(0,0,0,0.35);backdrop-filter:blur(4px);">
+      <span>RIGHT VIEW</span>
+      <button id="right-view-close" style="background:none;border:none;color:rgba(0,255,224,0.4);cursor:pointer;font-size:11px;padding:0;line-height:1;pointer-events:auto;">✕</button>
+    </div>
+    <div id="right-view-resize-handle" style="position:absolute;bottom:0;right:0;width:16px;height:16px;cursor:nwse-resize;pointer-events:auto;z-index:4;background:linear-gradient(135deg,transparent 50%,rgba(0,255,224,0.4) 50%);"></div>
+  </div>
+
+  <!-- Control Strip — ORBIT + SOL + FLOAT buttons, centered vertically & horizontally -->
+  <!-- Each wrapper is independently draggable -->
+  <div id="btn-orbital-wrapper" style="position:fixed;top:50%;left:calc(50% - 220px);transform:translate(-50%, -50%);z-index:2100;cursor:grab;user-select:none;pointer-events:auto;">
+    <button id="btn-orbital" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:7px 18px;background:transparent;color:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.3);border-radius:4px;cursor:pointer;transition:all 0.2s ease;backdrop-filter:blur(12px);user-select:none;width:100%;pointer-events:auto;white-space:nowrap;">
+      <span id="btn-orbital-label">ORBIT [O]</span>
+    </button>
+  </div>
+  
+  <div id="btn-sun-wrapper" style="position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);z-index:2100;cursor:grab;user-select:none;pointer-events:auto;">
+    <button id="btn-sun-anim" title="Toggle sun animation" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:7px 18px;background:transparent;color:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.3);border-radius:4px;cursor:pointer;transition:all 0.2s ease;backdrop-filter:blur(12px);user-select:none;pointer-events:auto;white-space:nowrap;">☀ SUN</button>
+  </div>
+  
+  <div id="btn-gravity-wrapper" style="position:fixed;top:50%;left:calc(50% + 220px);transform:translate(-50%, -50%);z-index:2100;cursor:grab;user-select:none;pointer-events:auto;">
+    <button id="mode-indicator-btn" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.14em;padding:7px 18px;background:transparent;border:1px solid rgba(0,255,224,0.5);border-radius:4px;color:#00FFE0;cursor:pointer;transition:all 0.3s ease;backdrop-filter:blur(12px);user-select:none;width:100%;pointer-events:auto;white-space:nowrap;">GRAVITY [G]</button>
+  </div>
+
+  <div id="btn-freetp-wrapper" style="position:fixed;top:50%;left:calc(50% + 330px);transform:translate(-50%, -50%);z-index:2100;cursor:grab;user-select:none;pointer-events:auto;">
+    <button id="btn-freetp" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.14em;padding:7px 18px;background:transparent;border:1px solid rgba(255,210,0,0.4);border-radius:4px;color:rgba(255,210,0,0.6);cursor:pointer;transition:all 0.3s ease;backdrop-filter:blur(12px);user-select:none;pointer-events:auto;white-space:nowrap;">TELEPORT</button>
+  </div>
+
+  <!-- FreeTeleport: spawn preview marker (arrow + ghost van outline) -->
+  <div id="freetp-hint" style="display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:2200;font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(255,210,0,0.85);letter-spacing:0.18em;pointer-events:none;text-align:center;text-shadow:0 0 12px rgba(255,210,0,0.5);">CLICK TERRAIN TO SPAWN HERE · ESC TO CANCEL</div>
+
+  <!-- Bottom control buttons: DRIVE MARS and CONSTRUCT -->
+  <button id="drive-toggle" style="position:fixed;bottom:28px;left:calc(50% - 165px);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:rgba(0,170,255,0.08);color:#00AAFF;border:1px solid rgba(0,170,255,0.4);border-radius:4px;cursor:default;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);">▶ DRIVE MARS</button>
+  <button id="construct-toggle" style="position:fixed;bottom:28px;left:calc(50% + 165px);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:transparent;color:#b8ff4a;border:1px solid rgba(184,255,74,0.5);border-radius:4px;cursor:pointer;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);">⚙ CONSTRUCT</button>
+
+  <!-- Hook Crosshair -->
+  <div id="hook-crosshair" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:24px;height:24px;border:1.5px solid #FF4444;border-radius:50%;pointer-events:none;z-index:1300;"></div>
+  <div id="hook-hud" style="display:none;position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:1300;font-family:'Share Tech Mono',monospace;font-size:10px;color:#FF4444;letter-spacing:0.15em;pointer-events:none;">[CLICK TO HOOK]</div>
+
+  <!-- Controls Bar — WASD button, positioned above the two lower buttons, draggeable -->
+  <div id="wasd-wrapper" style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:1001;cursor:grab;user-select:none;pointer-events:auto;">
+    <button id="btn-controls-toggle" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:2px 12px;background:transparent;color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.3);border-radius:4px;cursor:pointer;backdrop-filter:blur(12px);transition:all 0.2s ease;display:flex;align-items:center;gap:6px;pointer-events:auto;"><span style="font-size:18px;display:flex;align-items:center;">🕹</span> CONTROLS</button>
+  </div>
+  <div id="controls-info-bar" style="display:none;position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:999;font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(0,255,224,0.6);background:rgba(0,0,0,0.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.3);padding:7px 18px;letter-spacing:0.12em;border-radius:4px;white-space:nowrap;">
+    <kbd style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:2px;padding:1px 4px;font-size:10px;font-family:monospace;">WASD</kbd> DRIVE &nbsp;·&nbsp; <kbd style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:2px;padding:1px 4px;font-family:monospace;">SHIFT</kbd> BOOST &nbsp;·&nbsp; <kbd style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:2px;padding:1px 4px;font-family:monospace;">SPACE</kbd> JUMP &nbsp;·&nbsp; <kbd style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:2px;padding:1px 4px;font-family:monospace;">G</kbd> ANTIGRAV &nbsp;·&nbsp; <kbd style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:2px;padding:1px 4px;font-family:monospace;">Z</kbd> MAGNETIC &nbsp;·&nbsp; <kbd style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:2px;padding:1px 4px;font-family:monospace;">H</kbd> HOOK &nbsp;·&nbsp; <kbd style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:2px;padding:1px 4px;font-family:monospace;">R</kbd> RESPAWN &nbsp;·&nbsp; <kbd style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:2px;padding:1px 4px;font-family:monospace;">O</kbd> ORBIT &nbsp;·&nbsp; <kbd style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:2px;padding:1px 4px;font-family:monospace;">M</kbd> MAP &nbsp;·&nbsp; <kbd style="background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.2);border-radius:2px;padding:1px 4px;font-family:monospace;">Tab</kbd> CONSTRUCT
+  </div>
+
+  <!-- ANT ON MARS v.27 — left side, vertically centered, draggable, closeable -->
+  <div id="trail-info" class="game-hud-element" style="position:fixed;top:50%;left:16px;transform:translateY(-50%);z-index:800;font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(0,255,224,0.35);pointer-events:auto;line-height:1.8;cursor:grab;user-select:none;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+      <div>
+        <div>ANT ON MARS v.27</div>
+        <div>CREATE YOUR OWN ENGINE WORLD</div>
+        <div style="opacity:0.5;">SOUTH HUSTLES CBA ARG 25' SEASON</div>
+      </div>
+      <button id="trail-info-close" style="background:none;border:none;color:rgba(255,255,255,0.25);cursor:pointer;font-size:10px;padding:0;line-height:1;margin-top:-1px;flex-shrink:0;">✕</button>
+    </div>
+  </div>
+
+  <!-- SOUTH HUSTLES gamedev branding — right side, vertically centered, draggable, closeable -->
+  <div id="south-hustles-info" class="game-hud-element" style="position:fixed;top:calc(50% + 48px);right:16px;transform:translateY(-50%);z-index:800;font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(0,255,224,0.35);pointer-events:auto;line-height:1.8;cursor:grab;user-select:none;text-align:right;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+      <div>
+        <div style="font-size:12px;font-style:italic;">SOUTH HUSTLES</div>
+        <div style="opacity:0.5;">gamedev_</div>
+      </div>
+      <button id="south-hustles-close" style="background:none;border:none;color:rgba(255,255,255,0.25);cursor:pointer;font-size:10px;padding:0;line-height:1;margin-top:-1px;flex-shrink:0;">✕</button>
+    </div>
+  </div>
+
+  <!-- mode-indicator is now inside #control-strip as #mode-indicator-btn -->
+
+  <!-- Windowed mode frame (wraps canvas for "app within app" look) -->
+  <div id="game-frame"></div>
+
+  <!-- Windowed mode toggle button -->
+  <button id="btn-windowed" title="Toggle windowed mode [W]" style="position:fixed;top:50%;right:16px;transform:translateY(-50%);z-index:2100;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:7px 14px;background:rgba(0,0,0,0.82);color:rgba(255,255,255,0.4);border:1px solid rgba(255,255,255,0.1);border-radius:4px;cursor:pointer;backdrop-filter:blur(12px);transition:all 0.2s ease;">⊞ FRAME</button>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
