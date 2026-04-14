@@ -44,8 +44,8 @@ let currentVehicleSkinIdx = 0, _currentChassisVisual = null
 // Vehicle presets: [chassisGLB, wheelGLB, chassisScale, wheelScale, chassisRotationY]
 const VEHICLE_PRESETS = [
   {
-    name: 'TERRAIN VAN',
-    chassis: 'https://pub-6aa6b6baa3b043bf9598c7429620b422.r2.dev/van.satelite.glb',
+    name: 'CREATIVE VAN',
+    chassis: 'https://pub-6aa6b6baa3b043bf9598c7429620b422.r2.dev/van.creative.glb',
     wheels: 'https://pub-6aa6b6baa3b043bf9598c7429620b422.r2.dev/ruedacompresed.glb',
     chassisScale: 1.0,
     wheelScale: 0.49,
@@ -117,6 +117,7 @@ const GLB_CDN_BASE = 'https://pub-6aa6b6baa3b043bf9598c7429620b422.r2.dev'
 const R2_ASSETS = [
   'antonmars.connections.enviroment.glb',
   'hands.on.mountain.glb',
+  'la.bombonera.meshy.glb',
   'mate.yerba.glb',
   'wheel.white.glb',
   'rueda.glb',
@@ -145,9 +146,12 @@ let activeCustomZones = new Set()    // zoneIds currently active (vehicle inside
 
 // Zone placement mode
 let zonePlacementMode = false
-let zonePlacementType = 'ring'   // box | sphere | cylinder | ring
+let zonePlacementType = 'sphere'  // sphere | cylinder
 let zonePlacementColor = '#00FFE0'
 let zonePlacementSize = 'md'         // xs | md | xl
+let zonePlacementOffsetY = 0         // vertical offset from terrain hit point
+let zonePendingPoint = null          // terrain hit point waiting for Y confirm
+let zoneGhostMesh = null             // preview mesh before confirm
 
 // Zone capture / conquest system
 // zoneCapture: Map<zoneId, { timeInZone, captured, onCapture }>
@@ -156,9 +160,9 @@ const ZONE_CAPTURE_TIME = 5.0  // seconds to conquer a zone
 
 // Zone size definitions (radius in world units)
 const ZONE_SIZES = {
-  xs: { radius: 5, height: 2, label: 'XS (5m)' },
-  md: { radius: 20, height: 5, label: 'MD (20m)' },
-  xl: { radius: 100, height: 10, label: 'XL (100m)' }
+  xs: { radius: 6,  height: 6,  label: 'XS (6m)' },
+  md: { radius: 20, height: 12, label: 'MD (20m)' },
+  xl: { radius: 60, height: 30, label: 'XL (60m)' }
 }
 
 // Modals — data-driven modal sequences
@@ -284,6 +288,20 @@ async function init() {
     const loader = document.getElementById('loader')
     if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.remove(), 600) }
   }, 300)
+
+  // Auto-restore last saved world (slot 1 if exists)
+  setTimeout(async () => {
+    const lastSlot = localStorage.getItem('ant-mars-last-slot')
+    const slotToLoad = lastSlot || '1'
+    const raw = localStorage.getItem('ant-mars-world-' + slotToLoad)
+    if (raw) {
+      try {
+        const data = JSON.parse(raw)
+        await applyWorldData(data)
+        showToast(`✦ WORLD RESTORED · ${data.slotName || 'SLOT ' + slotToLoad}`, '#B4FF50', 2500)
+      } catch(e) { console.warn('[AutoRestore] failed:', e.message) }
+    }
+  }, 800)
 
   // Start loop
   renderer.setAnimationLoop(animate)
@@ -726,14 +744,30 @@ function setupUI() {
   // ADD ZONE button
   document.getElementById('ctor-add-zone-btn').addEventListener('click', () => {
     if (!constructorMode) toggleConstructorMode()
-    zonePlacementMode = !zonePlacementMode
     const btn = document.getElementById('ctor-add-zone-btn')
+
+    // CONFIRM pending zone
+    if (zonePendingPoint) {
+      removeZoneGhost()
+      placeZoneAtPoint(zonePendingPoint)
+      zonePendingPoint = null
+      zonePlacementMode = false
+      btn.style.background = 'rgba(0,255,224,0.1)'
+      btn.style.borderColor = 'rgba(0,255,224,0.4)'
+      btn.textContent = '+ ADD ZONE'
+      return
+    }
+
+    // Toggle placement mode
+    zonePlacementMode = !zonePlacementMode
     if (zonePlacementMode) {
-      btn.style.background = 'rgba(0,255,224,0.3)'
+      btn.style.background = 'rgba(0,255,224,0.15)'
       btn.style.borderColor = '#00FFE0'
-      btn.textContent = '✕ CANCEL ZONE'
-      showToast('CLICK ON TERRAIN TO PLACE ZONE', '#00FFE0', 2000)
+      btn.textContent = '✕ CANCEL'
+      showToast('CLICK EN EL TERRENO PARA POSICIONAR', '#00FFE0', 2000)
     } else {
+      removeZoneGhost()
+      zonePendingPoint = null
       btn.style.background = 'rgba(0,255,224,0.1)'
       btn.style.borderColor = 'rgba(0,255,224,0.4)'
       btn.textContent = '+ ADD ZONE'
@@ -744,18 +778,57 @@ function setupUI() {
   document.querySelectorAll('.zone-size-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.zone-size-btn').forEach(b => {
-        b.style.background = 'rgba(255,255,255,0.05)'
+        b.style.background = 'rgba(255,255,255,0.04)'
         b.style.borderColor = 'rgba(255,255,255,0.15)'
         b.style.color = 'rgba(255,255,255,0.4)'
         b.classList.remove('active')
       })
-      btn.style.background = 'rgba(0,255,224,0.15)'
+      btn.style.background = 'rgba(0,255,224,0.12)'
       btn.style.borderColor = 'rgba(0,255,224,0.4)'
       btn.style.color = '#00FFE0'
       btn.classList.add('active')
       zonePlacementSize = btn.dataset.size
-      showToast(`ZONE SIZE: ${zonePlacementSize.toUpperCase()}`, '#00FFE0', 1000)
+      if (zonePendingPoint) spawnZoneGhost(zonePendingPoint)
     })
+  })
+
+  // Zone shape selection buttons
+  document.querySelectorAll('.zone-shape-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.zone-shape-btn').forEach(b => {
+        b.style.background = 'rgba(255,255,255,0.04)'
+        b.style.borderColor = 'rgba(255,255,255,0.15)'
+        b.style.color = 'rgba(255,255,255,0.4)'
+        b.classList.remove('active')
+      })
+      btn.style.background = 'rgba(0,255,224,0.12)'
+      btn.style.borderColor = 'rgba(0,255,224,0.4)'
+      btn.style.color = '#00FFE0'
+      btn.classList.add('active')
+      zonePlacementType = btn.dataset.shape
+      if (zonePendingPoint) spawnZoneGhost(zonePendingPoint)
+    })
+  })
+
+  // Zone color picker
+  document.getElementById('zone-color-input')?.addEventListener('input', (e) => {
+    zonePlacementColor = e.target.value
+    if (zoneGhostMesh) zoneGhostMesh.material.color.set(zonePlacementColor)
+  })
+
+  // Zone Y offset slider
+  document.getElementById('zone-y-slider')?.addEventListener('input', (e) => {
+    zonePlacementOffsetY = parseFloat(e.target.value)
+    document.getElementById('zone-y-val').textContent = zonePlacementOffsetY.toFixed(1)
+    // Live-update ghost mesh position if pending
+    if (zoneGhostMesh && zonePendingPoint) {
+      const size = ZONE_SIZES[zonePlacementSize]
+      const h = size.height
+      const r = size.radius
+      const tubeR = Math.max(Math.min(r * 0.06, 2.5), 0.4)
+      const posY = zonePendingPoint.y + zonePlacementOffsetY + (zonePlacementType === 'ring-h' ? tubeR : h / 2)
+      zoneGhostMesh.position.y = posY
+    }
   })
 
   // EXPORT ZONES button
@@ -784,7 +857,16 @@ function setupUI() {
   GLB_CATALOG.forEach(item => {
     const slot = document.createElement('div')
     slot.className = 'ctor-glb-slot'
-    slot.innerHTML = `<div class="ctor-slot-thumb">${item.thumb}</div><div class="ctor-slot-info"><div class="ctor-slot-name">${item.name}</div><div class="ctor-slot-note">${item.note||''}</div></div><button class="ctor-slot-add">+</button>`
+    const previewSrc = `/GLB/previews/${item.name}.png`
+    slot.innerHTML = `
+      <div class="ctor-slot-thumb">
+        <img class="ctor-slot-img" src="${previewSrc}" alt="${item.name}"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+          style="width:100%;height:100%;object-fit:cover;border-radius:3px;display:block;" />
+        <div class="ctor-slot-img-fallback" style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:20px;color:rgba(255,255,255,0.25);">◈</div>
+      </div>
+      <div class="ctor-slot-info"><div class="ctor-slot-name">${item.name}</div><div class="ctor-slot-note">${item.note||''}</div></div>
+      <button class="ctor-slot-add">+</button>`
     slot.querySelector('.ctor-slot-add').addEventListener('click', (e) => { e.stopPropagation(); if (!constructorMode) toggleConstructorMode(); loadGLBFromCatalog(item) })
     slot.addEventListener('click', () => { if (!constructorMode) toggleConstructorMode(); loadGLBFromCatalog(item) })
     catalogList.appendChild(slot)
@@ -830,6 +912,10 @@ function setupUI() {
   // Draggable panels
   makeDraggable('ctor-panel-catalog', 'ctor-catalog-drag')
   makeDraggable('ctor-panel-inspector', 'ctor-inspector-drag')
+  makeDraggable('ctor-panel-zones', 'ctor-zones-drag')
+  document.getElementById('ctor-zones-close')?.addEventListener('click', () => {
+    document.getElementById('ctor-panel-zones')?.classList.remove('visible')
+  })
   makeDraggable('grav-tanks-hud', 'grav-tanks-hud')
   makeDraggable('drive-mode-panel', 'drive-mode-panel')
   makeDraggable('save-worlds-panel', 'save-worlds-panel')
@@ -1366,13 +1452,14 @@ function setupEvents() {
     if (zonePlacementMode) {
       const pt = ctorGetTerrainPoint(e.clientX, e.clientY)
       if (pt) {
-        placeZoneAtPoint(pt)
-        // Exit zone placement mode after placing
-        zonePlacementMode = false
+        // Enter pending mode — show ghost, let user adjust Y before confirming
+        zonePendingPoint = pt
+        spawnZoneGhost(pt)
+        // Update button to CONFIRM state
         const btn = document.getElementById('ctor-add-zone-btn')
-        btn.style.background = 'rgba(0,255,224,0.1)'
-        btn.style.borderColor = 'rgba(0,255,224,0.4)'
-        btn.textContent = '+ ADD ZONE'
+        btn.style.background = 'rgba(0,255,224,0.3)'
+        btn.style.borderColor = '#00FFE0'
+        btn.textContent = '✔ CONFIRM ZONE'
       }
       return
     }
@@ -2237,7 +2324,8 @@ function buildSaveDataV8() {
       position: z.position,
       color: z.color,
       scale: z.scale,
-      events: z.events || {}
+      events: z.events || {},
+      cameraPOV: z.cameraPOV || null
     })),
     modals: Array.from(worldModals.entries()).map(([id, m]) => ({ modalId: id, ...m })),
     panels: Array.from(worldPanels.entries()).map(([id, p]) => ({ panelId: id, ...p })),
@@ -2258,7 +2346,7 @@ function saveWorld(slot) {
   const data=buildSaveDataV8()
   data.slotName='SLOT '+slot
   data.thumbnail = captureWorldThumbnail()
-  try{localStorage.setItem('ant-mars-world-'+slot,JSON.stringify(data));showToast(`✦ SLOT ${slot} SAVED`,'#B4FF50',2000);s9RefreshLoadBtns()}catch(e){showToast('SAVE ERROR','#FF4444',1500)}
+  try{localStorage.setItem('ant-mars-world-'+slot,JSON.stringify(data));localStorage.setItem('ant-mars-last-slot',slot);showToast(`✦ SLOT ${slot} SAVED`,'#B4FF50',2000);s9RefreshLoadBtns()}catch(e){showToast('SAVE ERROR','#FF4444',1500)}
 }
 
 async function loadWorld(slot) {
@@ -2267,6 +2355,7 @@ async function loadWorld(slot) {
     if(!raw){showToast(`SLOT ${slot} VACÍO`,'#FF4444',1200);return}
     const data=JSON.parse(raw)
     await applyWorldData(data)
+    localStorage.setItem('ant-mars-last-slot', slot)
     showToast(`LOADED · ${data.slotName||'SLOT '+slot}`,'#B4FF50',2000)
   }catch(e){showToast('LOAD ERROR','#FF4444',1500);console.error(e)}
 }
@@ -2725,6 +2814,7 @@ async function applyWorldData(data) {
       createZoneCollider(zone)
       zoneCaptureState.set(zone.zoneId, { timeInZone: 0, captured: false })
     }
+    updateZoneList()
     console.log(`[Zones] Loaded ${data.customZones.length} custom zones`)
   }
 
@@ -2853,8 +2943,9 @@ function toggleConstructorMode() {
   toggleBtn.textContent=constructorMode?'✕ EXIT CONSTRUCT':'⚙ CONSTRUCT'
   modeBar.style.display=constructorMode?'block':'none'
 
+  const zonesPanel=document.getElementById('ctor-panel-zones')
   if(constructorMode){
-    catalog.classList.add('visible'); orbit.enabled=true; orbit.target.copy(chassisPos); orbit.update()
+    catalog.classList.add('visible'); if(zonesPanel)zonesPanel.classList.add('visible'); orbit.enabled=true; orbit.target.copy(chassisPos); orbit.update()
     gameEls.forEach(el=>el.classList.add('ctor-faded'))
     if(antigravBtn)antigravBtn.classList.add('ctor-faded')
     if(gravTanksHUD)gravTanksHUD.style.opacity='0.15'
@@ -2869,7 +2960,7 @@ function toggleConstructorMode() {
     // Show zone visuals in constructor mode
     for (const [zoneId, mesh] of customZoneVisuals) mesh.visible = true
   } else {
-    catalog.classList.remove('visible'); hideInspector(); deselectObject(); orbit.enabled=false
+    catalog.classList.remove('visible'); if(zonesPanel)zonesPanel.classList.remove('visible'); hideInspector(); deselectObject(); orbit.enabled=false
     gameEls.forEach(el=>el.classList.remove('ctor-faded'))
     if(antigravBtn)antigravBtn.classList.remove('ctor-faded')
     if(gravTanksHUD)gravTanksHUD.style.opacity='1'
@@ -3246,28 +3337,216 @@ function clearAllCustomZones() {
     }
   }
   customZoneVisuals.clear()
-  for (const [zoneId, { body, collider }] of customZoneColliders) {
-    try { physicsWorld.removeCollider(collider, false) } catch(e) {}
-    try { physicsWorld.removeRigidBody(body) } catch(e) {}
+  for (const [zoneId, physics] of customZoneColliders) {
+    if (!physics) continue
+    try { physicsWorld.removeCollider(physics.collider, false) } catch(e) {}
+    try { physicsWorld.removeRigidBody(physics.body) } catch(e) {}
   }
   customZoneColliders.clear()
   customZones = []
   activeCustomZones.clear()
   zoneCaptureState.clear()
   updateZoneCaptureHUD(null, 0)
+  updateZoneList()
+}
+
+function updateZoneList() {
+  const list = document.getElementById('ctor-zone-list')
+  if (!list) return
+  if (customZones.length === 0) {
+    list.innerHTML = '<div style="color:rgba(255,255,255,0.2);font-size:9px;text-align:center;padding:8px;">ninguna aún</div>'
+    return
+  }
+  list.innerHTML = ''
+  customZones.forEach(zone => {
+    const item = document.createElement('div')
+    item.style.cssText = 'display:flex;flex-direction:column;gap:4px;padding:6px 8px;border:1px solid rgba(0,255,224,0.12);border-radius:4px;background:rgba(0,255,224,0.03);'
+
+    const hasCam = !!zone.cameraPOV
+    item.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px;">
+        <!-- color dot / picker -->
+        <input type="color" value="${zone.color}" class="zone-color-edit" data-zoneid="${zone.zoneId}"
+          style="width:14px;height:14px;border:none;padding:0;border-radius:50%;cursor:pointer;background:none;flex-shrink:0;" />
+        <!-- editable name — click to fly if POV saved -->
+        <span contenteditable="true" class="zone-name-edit" data-zoneid="${zone.zoneId}"
+          style="flex:1;font-size:9px;color:${hasCam ? '#00FFE0' : 'rgba(255,255,255,0.8)'};outline:none;border-bottom:1px solid transparent;cursor:${hasCam ? 'pointer' : 'text'};white-space:nowrap;overflow:hidden;text-decoration:${hasCam ? 'underline dotted rgba(0,255,224,0.4)' : 'none'};"
+          title="${hasCam ? 'Click para volar · edita el nombre' : 'Click para editar nombre'}">${zone.name}</span>
+        <!-- shape/size label -->
+        <span style="font-size:8px;color:rgba(255,255,255,0.2);flex-shrink:0;">${zone.shape}·${zone.scale}</span>
+        <!-- cam button — always remaps POV -->
+        <button class="zone-cam-btn" data-zoneid="${zone.zoneId}" title="${hasCam ? 'Sobrescribir POV de cámara' : 'Guardar POV de cámara aquí'}"
+          style="background:${hasCam ? 'rgba(0,255,224,0.1)' : 'none'};border:1px solid ${hasCam ? '#00FFE0' : 'rgba(255,255,255,0.15)'};color:${hasCam ? '#00FFE0' : 'rgba(255,255,255,0.3)'};border-radius:3px;cursor:pointer;font-size:10px;padding:1px 5px;flex-shrink:0;line-height:1.4;">◎</button>
+        <!-- delete -->
+        <button class="zone-del-btn" data-zoneid="${zone.zoneId}"
+          style="background:none;border:none;color:rgba(255,80,80,0.5);cursor:pointer;font-size:12px;padding:0 2px;line-height:1;flex-shrink:0;">✕</button>
+      </div>
+      ${hasCam ? `<div style="font-size:8px;color:rgba(0,255,224,0.3);padding-left:20px;">↗ volar · ◎ para sobrescribir POV</div>` : `<div style="font-size:8px;color:rgba(255,255,255,0.15);padding-left:20px;">◎ para guardar cámara</div>`}
+    `
+
+    // Editable name — save on blur/enter
+    const nameEl = item.querySelector('.zone-name-edit')
+    nameEl.addEventListener('focus', () => nameEl.style.borderBottomColor = 'rgba(0,255,224,0.4)')
+    nameEl.addEventListener('blur', () => {
+      nameEl.style.borderBottomColor = 'transparent'
+      zone.name = nameEl.textContent.trim() || zone.name
+    })
+    nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); nameEl.blur() } })
+
+    // Color edit
+    item.querySelector('.zone-color-edit').addEventListener('input', (e) => {
+      zone.color = e.target.value
+      const mesh = customZoneVisuals.get(zone.zoneId)
+      if (mesh) mesh.material.color.set(zone.color)
+    })
+
+    // Camera POV button — always remaps to current camera position
+    item.querySelector('.zone-cam-btn').addEventListener('click', (e) => {
+      e.stopPropagation()
+      zone.cameraPOV = {
+        px: camera.position.x, py: camera.position.y, pz: camera.position.z,
+        tx: chassisPos.x, ty: chassisPos.y + 2, tz: chassisPos.z
+      }
+      showToast(`◎ POV MAPEADO · ${zone.name}`, zone.color, 1500)
+      updateZoneList()
+    })
+
+    // Zone name: single click → fly (if POV); double click → edit
+    const nameEl2 = item.querySelector('.zone-name-edit')
+    let nameSingleClickTimer = null
+    nameEl2.addEventListener('click', (e) => {
+      if (!zone.cameraPOV) return
+      clearTimeout(nameSingleClickTimer)
+      nameSingleClickTimer = setTimeout(() => {
+        flyToZonePOV(zone)
+      }, 220)
+    })
+    nameEl2.addEventListener('dblclick', (e) => {
+      clearTimeout(nameSingleClickTimer)
+      // Let contenteditable handle it naturally
+    })
+
+    // Delete
+    item.querySelector('.zone-del-btn').addEventListener('click', (e) => {
+      e.stopPropagation()
+      const zid = e.target.dataset.zoneid
+      const mesh = customZoneVisuals.get(zid)
+      if (mesh) { scene.remove(mesh); mesh.geometry?.dispose(); mesh.material?.dispose() }
+      customZoneVisuals.delete(zid)
+      const physics = customZoneColliders.get(zid)
+      if (physics) {
+        try { physicsWorld.removeCollider(physics.collider, false) } catch(e2) {}
+        try { physicsWorld.removeRigidBody(physics.body) } catch(e2) {}
+      }
+      customZoneColliders.delete(zid)
+      customZones.splice(customZones.findIndex(z => z.zoneId === zid), 1)
+      zoneCaptureState.delete(zid)
+      updateZoneList()
+    })
+
+    list.appendChild(item)
+  })
+}
+
+function flyToZonePOV(zone) {
+  if (!zone.cameraPOV) return
+  const pov = zone.cameraPOV
+  // Smooth camera fly using lerp over ~2 seconds
+  const startPos = camera.position.clone()
+  const endPos = new THREE.Vector3(pov.px, pov.py, pov.pz)
+  const target = new THREE.Vector3(pov.tx, pov.ty, pov.tz)
+  let t = 0
+  const dur = 2.0
+  const prevOrbit = carSettings.orbitControls
+  carSettings.orbitControls = true
+  orbit.enabled = true
+  showToast(`◎ ${zone.name}`, zone.color, 2000)
+  const flyTick = (dt) => {
+    t += dt / dur
+    if (t >= 1) {
+      camera.position.copy(endPos)
+      orbit.target.copy(target)
+      orbit.update()
+      if (!prevOrbit) { carSettings.orbitControls = false; orbit.enabled = false }
+      return
+    }
+    const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t
+    camera.position.lerpVectors(startPos, endPos, ease)
+    orbit.target.copy(target)
+    orbit.update()
+    requestAnimationFrame(() => flyTick(1/60))
+  }
+  flyTick(0)
+}
+
+function spawnZoneGhost(point) {
+  removeZoneGhost()
+  const size = ZONE_SIZES[zonePlacementSize]
+  const r = size.radius
+  const h = size.height
+  const tubeR = Math.max(Math.min(r * 0.06, 2.5), 0.4)
+
+  let geometry
+  switch (zonePlacementType) {
+    case 'ring-h':
+      geometry = new THREE.TorusGeometry(r, tubeR, 12, 48)
+      break
+    case 'ring-v':
+      geometry = new THREE.TorusGeometry(r, tubeR, 12, 48)
+      break
+    case 'sphere':
+      geometry = new THREE.SphereGeometry(r, 18, 18)
+      break
+    case 'cylinder':
+      geometry = new THREE.CylinderGeometry(r, r, h, 24, 1, true)
+      break
+    case 'box':
+      geometry = new THREE.BoxGeometry(r * 2, h, r * 2)
+      break
+    default:
+      geometry = new THREE.BoxGeometry(r * 2, h, r * 2)
+  }
+
+  const material = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(zonePlacementColor),
+    wireframe: zonePlacementType === 'box' || zonePlacementType === 'sphere',
+    transparent: true,
+    opacity: 0.45,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  })
+
+  zoneGhostMesh = new THREE.Mesh(geometry, material)
+  if (zonePlacementType === 'ring-h') zoneGhostMesh.rotation.x = Math.PI / 2
+
+  const posY = point.y + zonePlacementOffsetY + (zonePlacementType === 'ring-h' ? tubeR : h / 2)
+  zoneGhostMesh.position.set(point.x, posY, point.z)
+  zoneGhostMesh.userData.isGhost = true
+  scene.add(zoneGhostMesh)
+}
+
+function removeZoneGhost() {
+  if (!zoneGhostMesh) return
+  scene.remove(zoneGhostMesh)
+  zoneGhostMesh.geometry?.dispose()
+  zoneGhostMesh.material?.dispose()
+  zoneGhostMesh = null
 }
 
 function placeZoneAtPoint(point) {
   const size = ZONE_SIZES[zonePlacementSize]
+  const nameInput = document.getElementById('zone-name-input')
   const defaultName = `Zone ${customZones.length + 1}`
-  const name = prompt('Nombre de la zona:', defaultName) || defaultName
+  const name = (nameInput?.value?.trim()) || defaultName
+  // Auto-increment name for next zone
+  if (nameInput) nameInput.value = `Zone ${customZones.length + 2}`
   const zone = {
     zoneId: `zone_${Date.now()}`,
-    name: name.trim(),
+    name,
     type: 'trigger',
     shape: zonePlacementType,
     dimensions: { x: size.radius * 2, y: size.height, z: size.radius * 2 },
-    position: { x: point.x, y: point.y, z: point.z },
+    position: { x: point.x, y: point.y + zonePlacementOffsetY, z: point.z },
     color: zonePlacementColor,
     scale: zonePlacementSize,
     events: {}
@@ -3276,43 +3555,53 @@ function placeZoneAtPoint(point) {
   createZoneVisual(zone)
   createZoneCollider(zone)
   zoneCaptureState.set(zone.zoneId, { timeInZone: 0, captured: false })
-  showToast(`ZONA CREADA: ${zone.name} (${zonePlacementSize.toUpperCase()})`, zone.color, 2000)
+  updateZoneList()
+  showToast(`ZONA: ${zone.name}`, zone.color, 1500)
 }
 
 function createZoneVisual(zone) {
   let geometry
   const { x, y, z } = zone.dimensions
+  const r = Math.max(x / 2, 3)
+  const tubeR = Math.max(Math.min(r * 0.06, 2.5), 0.4)
   switch(zone.shape) {
-    case 'box':
-      geometry = new THREE.BoxGeometry(x, y, z)
+    case 'ring-h':
+      // Horizontal torus — lies flat on terrain
+      geometry = new THREE.TorusGeometry(r, tubeR, 12, 48)
+      break
+    case 'ring-v':
+      // Vertical torus — stands upright like a portal
+      geometry = new THREE.TorusGeometry(r, tubeR, 12, 48)
       break
     case 'sphere':
-      geometry = new THREE.SphereGeometry(x / 2, 16, 16)
+      geometry = new THREE.SphereGeometry(r, 18, 18)
       break
     case 'cylinder':
-      geometry = new THREE.CylinderGeometry(x / 2, x / 2, y, 16)
+      geometry = new THREE.CylinderGeometry(r, r, y, 24, 1, true)
       break
-    case 'ring':
-      // Torus ring: outer radius = x/2, tube radius = y/4, tube segments for halo effect
-      const majorRadius = Math.max(x / 2.5, 5)
-      const tubeRadius = Math.max(y / 4, 2)
-      geometry = new THREE.TorusGeometry(majorRadius, tubeRadius, 16, 32)
+    case 'box':
+      geometry = new THREE.BoxGeometry(x, y, z)
       break
     default:
       geometry = new THREE.BoxGeometry(x, y, z)
   }
-  
-  // Create wireframe material - very transparent for constructor mode
+
   const material = new THREE.MeshBasicMaterial({
     color: new THREE.Color(zone.color),
-    wireframe: true,
+    wireframe: zone.shape === 'box' || zone.shape === 'sphere',
     transparent: true,
-    opacity: 0.25,  // More transparent
-    depthWrite: false  // Don't write to depth buffer
+    opacity: zone.shape === 'ring-h' || zone.shape === 'ring-v' ? 0.7 : 0.2,
+    depthWrite: false,
+    side: THREE.DoubleSide
   })
-  
+
   const mesh = new THREE.Mesh(geometry, material)
-  mesh.position.set(zone.position.x, zone.position.y + y / 2, zone.position.z)
+
+  // ring-h: rotate torus to lie flat; ring-v: stands upright by default
+  if (zone.shape === 'ring-h') mesh.rotation.x = Math.PI / 2
+  // ring-v stays default (vertical plane)
+
+  mesh.position.set(zone.position.x, zone.position.y + (zone.shape === 'ring-h' ? tubeR : y / 2), zone.position.z)
   mesh.userData.zoneId = zone.zoneId
   mesh.visible = constructorMode
   scene.add(mesh)
@@ -3320,43 +3609,9 @@ function createZoneVisual(zone) {
 }
 
 function createZoneCollider(zone) {
-  if (!RAPIER) return
-  
-  let colliderDesc
-  const { x, y, z } = zone.dimensions
-  switch(zone.shape) {
-    case 'box':
-      colliderDesc = RAPIER.ColliderDesc.cuboid(x / 2, y / 2, z / 2)
-      break
-    case 'sphere':
-      colliderDesc = RAPIER.ColliderDesc.ball(x / 2)
-      break
-    case 'cylinder':
-      colliderDesc = RAPIER.ColliderDesc.cylinder(y / 2, x / 2)
-      break
-    case 'ring':
-      // Use cylinder for ring detection in physics (approximation of torus)
-      colliderDesc = RAPIER.ColliderDesc.cylinder(y / 2, Math.max(x / 2.5, 5))
-      break
-    default:
-      colliderDesc = RAPIER.ColliderDesc.cuboid(x / 2, y / 2, z / 2)
-  }
-  
-  const body = physicsWorld.createRigidBody(
-    RAPIER.RigidBodyDesc.fixed().setTranslation(
-      zone.position.x,
-      zone.position.y + y / 2,
-      zone.position.z
-    )
-  )
-  
-  const collider = physicsWorld.createCollider(
-    colliderDesc.setSensor(true),
-    body
-  )
-  
-  collider.userData = { zoneId: zone.zoneId, type: zone.type }
-  customZoneColliders.set(zone.zoneId, { body, collider })
+  // Zones are purely visual + JS-based proximity detection — no Rapier collider
+  // This avoids the vehicle bouncing/flying when entering a zone
+  customZoneColliders.set(zone.zoneId, null)
 }
 
 // Zone detection — check if point is inside zone volume
@@ -3431,6 +3686,10 @@ function checkCustomZoneCollisions() {
 // Called when a zone is fully conquered (5s inside)
 function onZoneCaptured(zone) {
   showToast(`⬡ ZONA CONQUISTADA: ${zone.name}`, zone.color, 3000)
+  // Auto fly-to POV if saved
+  if (zone.cameraPOV) {
+    setTimeout(() => flyToZonePOV(zone), 800)
+  }
   // Fire capture events if defined
   const evt = zone.events?.onCapture
   if (!evt) return

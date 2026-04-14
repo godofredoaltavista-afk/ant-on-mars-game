@@ -9,15 +9,133 @@
 </head>
 <body>
   <!-- Loader -->
-  <div id="loader" style="position:fixed;inset:0;z-index:9999;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Share Tech Mono',monospace;transition:opacity 0.6s ease;">
-    <div style="font-size:11px;color:#00FFE0;letter-spacing:0.3em;margin-bottom:24px;opacity:0.6;">ANT ON MARS // ENGINE BOOT</div>
-    <div style="font-family:'Bebas Neue',sans-serif;font-size:64px;color:#fff;letter-spacing:4px;line-height:1;">ANT ON MARS</div>
-    <div style="font-size:11px;color:rgba(255,255,255,0.3);letter-spacing:0.2em;margin-top:8px;margin-bottom:40px;">GAUSSIAN SPLAT WORLD ENGINE</div>
-    <div style="width:240px;height:2px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;">
-      <div id="loader-bar" style="width:0%;height:100%;background:#00FFE0;transition:width 0.4s ease;"></div>
+  <div id="loader" style="position:fixed;inset:0;z-index:9999;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Share Tech Mono',monospace;transition:opacity 0.8s ease;">
+    <!-- Three.js wireframe orb -->
+    <canvas id="loader-canvas" style="width:140px;height:140px;margin-bottom:28px;opacity:0.85;"></canvas>
+
+    <div style="font-size:9px;color:rgba(0,255,224,0.5);letter-spacing:0.35em;margin-bottom:6px;">ANT ON MARS // ENGINE BOOT</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:56px;color:#fff;letter-spacing:4px;line-height:1;margin-bottom:4px;">ANT ON MARS</div>
+    <div style="font-size:9px;color:rgba(255,255,255,0.2);letter-spacing:0.22em;margin-bottom:36px;">PHYSICS WORLD ENGINE · MARS SURFACE</div>
+
+    <!-- Multi-step loading bars -->
+    <div id="loader-steps" style="display:flex;flex-direction:column;gap:10px;width:320px;">
+      <div class="ldr-step" id="ldr-s0">
+        <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+          <span style="font-size:8px;color:rgba(0,255,224,0.6);letter-spacing:0.15em;">GRAVEDAD MARCIANA</span>
+          <span style="font-size:8px;color:rgba(0,255,224,0.35);">3.72076 m/s²</span>
+        </div>
+        <div style="height:2px;background:rgba(255,255,255,0.06);border-radius:1px;overflow:hidden;">
+          <div class="ldr-bar" style="height:100%;width:0%;background:#00FFE0;transition:width 0.6s ease;border-radius:1px;box-shadow:0 0 6px rgba(0,255,224,0.6);"></div>
+        </div>
+      </div>
+      <div class="ldr-step" id="ldr-s1" style="opacity:0.2;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+          <span style="font-size:8px;color:rgba(0,255,224,0.6);letter-spacing:0.15em;">DISTANCIA MARTE–LUNA</span>
+          <span style="font-size:8px;color:rgba(0,255,224,0.35);">384,400 km</span>
+        </div>
+        <div style="height:2px;background:rgba(255,255,255,0.06);border-radius:1px;overflow:hidden;">
+          <div class="ldr-bar" style="height:100%;width:0%;background:#B4FF50;transition:width 0.6s ease;border-radius:1px;box-shadow:0 0 6px rgba(180,255,80,0.5);"></div>
+        </div>
+      </div>
+      <div class="ldr-step" id="ldr-s2" style="opacity:0.2;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+          <span style="font-size:8px;color:rgba(0,255,224,0.6);letter-spacing:0.15em;">CARGANDO CONSTRUCTOR GLB</span>
+          <span style="font-size:8px;color:rgba(0,255,224,0.35);">RAPIER 3D</span>
+        </div>
+        <div style="height:2px;background:rgba(255,255,255,0.06);border-radius:1px;overflow:hidden;">
+          <div class="ldr-bar" style="height:100%;width:0%;background:#00FFE0;transition:width 0.6s ease;border-radius:1px;box-shadow:0 0 6px rgba(0,255,224,0.6);"></div>
+        </div>
+      </div>
+      <div class="ldr-step" id="ldr-s3" style="opacity:0.2;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+          <span style="font-size:8px;color:rgba(0,255,224,0.6);letter-spacing:0.15em;">CALCULANDO FÍSICA EN MARTE</span>
+          <span style="font-size:8px;color:rgba(0,255,224,0.35);">WebGPU READY</span>
+        </div>
+        <div style="height:2px;background:rgba(255,255,255,0.06);border-radius:1px;overflow:hidden;">
+          <div class="ldr-bar" style="height:100%;width:0%;background:#B4FF50;transition:width 0.6s ease;border-radius:1px;box-shadow:0 0 6px rgba(180,255,80,0.5);"></div>
+        </div>
+      </div>
+      <div class="ldr-step" id="ldr-s4" style="opacity:0.2;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+          <span style="font-size:8px;color:rgba(0,255,224,0.6);letter-spacing:0.15em;">GENERANDO SUPERFICIE MARCIANA</span>
+          <span id="loader-status" style="font-size:8px;color:rgba(0,255,224,0.35);">TERRAIN</span>
+        </div>
+        <div style="height:2px;background:rgba(255,255,255,0.06);border-radius:1px;overflow:hidden;">
+          <div class="ldr-bar" style="height:100%;width:0%;background:#00FFE0;transition:width 0.6s ease;border-radius:1px;box-shadow:0 0 6px rgba(0,255,224,0.6);"></div>
+        </div>
+      </div>
     </div>
-    <div id="loader-status" style="font-size:10px;color:#00FFE0;margin-top:12px;letter-spacing:0.2em;opacity:0.7;">INITIALIZING PHYSICS…</div>
+
+    <div id="loader-bar" style="display:none;"></div><!-- keep for JS compat -->
   </div>
+
+  <script type="module">
+  // Loader Three.js wireframe orb — runs independently during boot
+  import * as THREE from 'three'
+  ;(async () => {
+    const canvas = document.getElementById('loader-canvas')
+    if (!canvas) return
+    const w = 140, h = 140
+    canvas.width = w * devicePixelRatio
+    canvas.height = h * devicePixelRatio
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
+    renderer.setPixelRatio(devicePixelRatio)
+    renderer.setSize(w, h)
+    renderer.setClearColor(0x000000, 0)
+
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
+    camera.position.set(0, 0, 3.2)
+
+    // Outer icosahedron wireframe
+    const geo1 = new THREE.IcosahedronGeometry(1, 1)
+    const mat1 = new THREE.MeshBasicMaterial({ color: 0x00FFE0, wireframe: true, transparent: true, opacity: 0.55 })
+    const orb = new THREE.Mesh(geo1, mat1)
+    scene.add(orb)
+
+    // Inner sphere pulsing
+    const geo2 = new THREE.SphereGeometry(0.38, 12, 12)
+    const mat2 = new THREE.MeshBasicMaterial({ color: 0x00FFE0, transparent: true, opacity: 0.12 })
+    const core = new THREE.Mesh(geo2, mat2)
+    scene.add(core)
+
+    // Equatorial ring
+    const geo3 = new THREE.TorusGeometry(1.18, 0.012, 6, 64)
+    const mat3 = new THREE.MeshBasicMaterial({ color: 0xB4FF50, transparent: true, opacity: 0.45 })
+    const ring = new THREE.Mesh(geo3, mat3)
+    ring.rotation.x = Math.PI / 2
+    scene.add(ring)
+
+    let t = 0
+    const tick = () => {
+      if (!document.getElementById('loader')) return
+      t += 0.016
+      orb.rotation.y = t * 0.6
+      orb.rotation.x = t * 0.22
+      ring.rotation.z = t * 0.4
+      core.material.opacity = 0.08 + Math.sin(t * 2.4) * 0.08
+      mat1.opacity = 0.4 + Math.sin(t * 1.1) * 0.15
+      renderer.render(scene, camera)
+      requestAnimationFrame(tick)
+    }
+    tick()
+
+    // Animate loader steps progressively
+    const steps = document.querySelectorAll('.ldr-step')
+    const bars = document.querySelectorAll('.ldr-bar')
+    const delays = [0, 600, 1300, 2100, 2900]
+    const durations = [500, 700, 900, 800, 600]
+    steps.forEach((step, i) => {
+      setTimeout(() => {
+        step.style.opacity = '1'
+        step.style.transition = 'opacity 0.3s'
+        const bar = bars[i]
+        requestAnimationFrame(() => { bar.style.width = '100%'; bar.style.transitionDuration = durations[i] + 'ms' })
+      }, delays[i])
+    })
+  })()
+  </script>
 
   <!-- Telemetry HUD -->
   <div id="hud-telemetry" class="panel-glass game-hud-element" style="position:fixed;top:16px;left:16px;z-index:1000;font-family:'Share Tech Mono',monospace;font-size:11px;color:#00FFE0;padding:8px 12px;min-width:190px;">
@@ -81,25 +199,56 @@
   </div>
 
   <!-- Constructor Mode -->
-  <div id="constructor-mode-bar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:2030;font-family:'Share Tech Mono',monospace;font-size:10px;color:#b8ff4a;background:rgba(10,10,10,0.9);border-bottom:1px solid rgba(184,255,74,0.3);padding:5px 16px;letter-spacing:0.12em;align-items:center;gap:12px;">
+  <div id="constructor-mode-bar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:2030;font-family:'Share Tech Mono',monospace;font-size:10px;color:#b8ff4a;background:rgba(10,10,10,0.9);border-bottom:1px solid rgba(184,255,74,0.3);padding:5px 16px;letter-spacing:0.12em;align-items:center;gap:10px;flex-wrap:wrap;">
     <span>◈ CONSTRUCTOR MODE</span>
-    <span style="color:rgba(255,255,255,0.3);">·</span>
-    <button id="ctor-add-zone-btn" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;padding:3px 10px;background:rgba(0,255,224,0.1);border:1px solid rgba(0,255,224,0.4);color:#00FFE0;border-radius:3px;cursor:pointer;transition:all 0.2s;">+ ADD ZONE</button>
-    <!-- Zone size selection -->
-    <span style="color:rgba(255,255,255,0.3);">·</span>
-    <span style="font-size:8px;color:rgba(255,255,255,0.4);">ZONE SIZE:</span>
-    <button class="zone-size-btn" data-size="xs" style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.1em;padding:2px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4);border-radius:3px;cursor:pointer;transition:all 0.2s;">XS</button>
-    <button class="zone-size-btn active" data-size="md" style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.1em;padding:2px 8px;background:rgba(0,255,224,0.15);border:1px solid rgba(0,255,224,0.4);color:#00FFE0;border-radius:3px;cursor:pointer;transition:all 0.2s;">MD</button>
-    <button class="zone-size-btn" data-size="xl" style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.1em;padding:2px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4);border-radius:3px;cursor:pointer;transition:all 0.2s;">XL</button>
-    <span style="color:rgba(255,255,255,0.3);">·</span>
-    <button id="ctor-export-zones-btn" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;padding:3px 10px;background:rgba(180,255,80,0.1);border:1px solid rgba(180,255,80,0.3);color:#B4FF50;border-radius:3px;cursor:pointer;transition:all 0.2s;">↓ EXPORT ZONES</button>
-    <button id="ctor-import-zones-btn" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;padding:3px 10px;background:rgba(0,170,255,0.1);border:1px solid rgba(0,170,255,0.3);color:#00AAFF;border-radius:3px;cursor:pointer;transition:all 0.2s;">↑ IMPORT ZONES</button>
+    <span style="color:rgba(255,255,255,0.2);">│</span>
+
+    <!-- Zone name input -->
+    <input id="zone-name-input" type="text" placeholder="zone name..." value="Zone 1"
+      style="font-family:'Share Tech Mono',monospace;font-size:9px;padding:2px 8px;width:90px;background:rgba(0,255,224,0.06);border:1px solid rgba(0,255,224,0.25);color:#00FFE0;border-radius:3px;outline:none;letter-spacing:0.05em;" />
+
+    <!-- Shape selector -->
+    <span style="font-size:8px;color:rgba(255,255,255,0.35);">SHAPE:</span>
+    <button class="zone-shape-btn active" data-shape="sphere" title="Sphere" style="font-family:'Share Tech Mono',monospace;font-size:8px;padding:2px 7px;background:rgba(0,255,224,0.12);border:1px solid rgba(0,255,224,0.4);color:#00FFE0;border-radius:3px;cursor:pointer;transition:all 0.15s;">◯ SPH</button>
+    <button class="zone-shape-btn" data-shape="cylinder" title="Cylinder" style="font-family:'Share Tech Mono',monospace;font-size:8px;padding:2px 7px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4);border-radius:3px;cursor:pointer;transition:all 0.15s;">▭ CYL</button>
+
+    <span style="color:rgba(255,255,255,0.2);">│</span>
+
+    <!-- Size -->
+    <span style="font-size:8px;color:rgba(255,255,255,0.35);">SIZE:</span>
+    <button class="zone-size-btn" data-size="xs" style="font-family:'Share Tech Mono',monospace;font-size:8px;padding:2px 7px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4);border-radius:3px;cursor:pointer;">XS</button>
+    <button class="zone-size-btn active" data-size="md" style="font-family:'Share Tech Mono',monospace;font-size:8px;padding:2px 7px;background:rgba(0,255,224,0.12);border:1px solid rgba(0,255,224,0.4);color:#00FFE0;border-radius:3px;cursor:pointer;">MD</button>
+    <button class="zone-size-btn" data-size="xl" style="font-family:'Share Tech Mono',monospace;font-size:8px;padding:2px 7px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4);border-radius:3px;cursor:pointer;">XL</button>
+
+    <!-- Color -->
+    <span style="font-size:8px;color:rgba(255,255,255,0.35);">COLOR:</span>
+    <input id="zone-color-input" type="color" value="#00FFE0"
+      style="width:22px;height:22px;padding:1px;border:1px solid rgba(0,255,224,0.3);border-radius:3px;background:transparent;cursor:pointer;vertical-align:middle;" />
+
+    <span style="color:rgba(255,255,255,0.2);">│</span>
+
+    <!-- Y offset -->
+    <span style="font-size:8px;color:rgba(255,255,255,0.35);">Y:</span>
+    <input id="zone-y-slider" type="range" min="-10" max="80" step="0.5" value="0"
+      style="width:60px;accent-color:#00FFE0;vertical-align:middle;cursor:pointer;" />
+    <span id="zone-y-val" style="font-size:8px;color:#00FFE0;min-width:24px;">0</span>
+
+    <span style="color:rgba(255,255,255,0.2);">│</span>
+
+    <!-- Add zone button -->
+    <button id="ctor-add-zone-btn" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;padding:3px 12px;background:rgba(0,255,224,0.1);border:1px solid rgba(0,255,224,0.4);color:#00FFE0;border-radius:3px;cursor:pointer;transition:all 0.2s;">+ ADD ZONE</button>
+
+    <span style="color:rgba(255,255,255,0.2);">│</span>
+
+    <button id="ctor-export-zones-btn" style="font-family:'Share Tech Mono',monospace;font-size:9px;padding:3px 8px;background:rgba(180,255,80,0.08);border:1px solid rgba(180,255,80,0.25);color:#B4FF50;border-radius:3px;cursor:pointer;">↓ EXPORT</button>
+    <button id="ctor-import-zones-btn" style="font-family:'Share Tech Mono',monospace;font-size:9px;padding:3px 8px;background:rgba(0,170,255,0.08);border:1px solid rgba(0,170,255,0.25);color:#00AAFF;border-radius:3px;cursor:pointer;">↑ IMPORT</button>
     <input type="file" id="ctor-import-zones-input" style="display:none;" accept=".json" />
-    <span style="color:rgba(255,255,255,0.3);">·</span>
-    <span>Click terreno para colocar · Click objeto para seleccionar · G mover · R rotar · S escalar · Esc deselect · Tab salir</span>
+
+    <span style="color:rgba(255,255,255,0.2);">│</span>
+    <span style="font-size:8px;color:rgba(255,255,255,0.25);">Esc deselect · Tab salir · <span style="color:rgba(0,255,224,0.4);">create your own world</span></span>
   </div>
   <!-- Constructor Panels -->
-  <div id="ctor-panel-catalog" class="ctor-panel" style="position:fixed;top:60px;left:220px;z-index:1800;width:260px;background:rgba(10,10,10,0.92);border:1px solid rgba(184,255,74,0.2);border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:10px;color:#ccc;backdrop-filter:blur(16px);flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.7);user-select:none;">
+  <div id="ctor-panel-catalog" class="ctor-panel" style="position:fixed;top:60px;left:220px;z-index:1800;width:340px;background:rgba(10,10,10,0.92);border:1px solid rgba(184,255,74,0.2);border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:10px;color:#ccc;backdrop-filter:blur(16px);flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.7);user-select:none;">
     <div class="ctor-panel-header" id="ctor-catalog-drag" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(184,255,74,0.06);border-bottom:1px solid rgba(184,255,74,0.15);cursor:grab;letter-spacing:0.12em;"><span class="ctor-panel-title" style="font-family:'Syne',monospace;font-weight:800;font-size:11px;color:#b8ff4a;">◈ GLB CATALOG</span><button class="ctor-panel-close" id="ctor-catalog-close" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;font-size:13px;padding:0;line-height:1;">✕</button></div>
     <div class="ctor-panel-body" style="padding:10px;display:flex;flex-direction:column;gap:8px;">
       <div class="ctor-drop-zone" id="ctor-drop-zone" style="border:1px dashed rgba(184,255,74,0.35);border-radius:4px;padding:12px 8px;text-align:center;color:rgba(184,255,74,0.5);font-size:9px;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;">◆ DROP .GLB HERE<br><span style="color:rgba(184,255,74,0.3);font-size:8px;">o hacé click para explorar</span></div>
@@ -110,6 +259,18 @@
       <div id="ctor-catalog-list"></div>
       <div style="font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.1em;margin-top:8px;">OBJETOS EN ESCENA</div>
       <div class="ctor-obj-list" id="ctor-obj-list" style="display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(184,255,74,0.2) transparent;"><div style="color:rgba(255,255,255,0.2);font-size:9px;text-align:center;padding:8px;">ninguno aún</div></div>
+    </div>
+  </div>
+
+  <!-- ZONES / MAPPING PANEL -->
+  <div id="ctor-panel-zones" class="ctor-panel" style="position:fixed;top:60px;left:580px;z-index:1800;width:280px;background:rgba(8,12,16,0.94);border:1px solid rgba(0,255,224,0.25);border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:10px;color:#ccc;backdrop-filter:blur(16px);flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,255,224,0.08);user-select:none;">
+    <div class="ctor-panel-header" id="ctor-zones-drag" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(0,255,224,0.06);border-bottom:1px solid rgba(0,255,224,0.15);cursor:grab;letter-spacing:0.12em;">
+      <span class="ctor-panel-title" style="font-family:'Syne',monospace;font-weight:800;font-size:11px;color:#00FFE0;">◉ ZONES · MAPPING</span>
+      <button class="ctor-panel-close" id="ctor-zones-close" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;font-size:13px;padding:0;line-height:1;">✕</button>
+    </div>
+    <div class="ctor-panel-body" style="padding:10px;display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 140px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(0,255,224,0.2) transparent;">
+      <div style="font-size:8px;color:rgba(0,255,224,0.35);letter-spacing:0.12em;margin-bottom:2px;">ZONAS ACTIVAS · click nombre para volar</div>
+      <div id="ctor-zone-list" style="display:flex;flex-direction:column;gap:4px;"><div style="color:rgba(255,255,255,0.2);font-size:9px;text-align:center;padding:8px;">ninguna aún</div></div>
     </div>
   </div>
 
