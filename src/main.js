@@ -189,6 +189,67 @@ let dustIndex = 0, splashIndex = 0, windDustIndex = 0, debrisIndex = 0, windTime
 let ambientLight, redAmbient, shadowRedFill, dirLight
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CAPA 1 — DRILL / TORNO MODE GLOBALS (additive)
+// ═══════════════════════════════════════════════════════════════════════════
+let drillCamera = null               // PerspectiveCamera, interior POV looking down
+let drillCamOpen = false             // panel open/closed
+let drillSampleHoldTime = 0          // seconds the player has been holding [E]
+let drillSampleHoldActive = false    // is [E] currently held while panel open
+const DRILL_SAMPLE_HOLD_DURATION = 2.4  // seconds to complete one sample (doubled — feels more deliberate)
+const MAX_SAMPLES = 7
+let roverSamples = []                // [{ id, biome, colors[], position, t }]
+let _drillBlinkUntil = 0             // hud blink end-timestamp when full
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CAPA 2/3/4 — PROBE / EJECT / CAPSULE / SAT_SLOT GLOBALS (additive)
+// ═══════════════════════════════════════════════════════════════════════════
+// State machine: 'idle' → 'prep' → 'flying' → 'eject_window' → 'capsule_flying' → 'captured' → 'idle'
+let probeState = 'idle'
+let probeBody = null, probeMesh = null   // Rapier dynamic body + Three.js placeholder mesh
+let probeSamples = []                    // samples transferred at launch time
+let probeCamera = null                   // orbital cam around the probe
+let probeOrbitAngle = 0                  // radians, controlled with A/D while flying
+let probeLaunchPos = null                // where the rocket left from (rover spawn)
+let _probeLaunchTime = 0                 // performance.now() at launch
+const PROBE_LAUNCH_IMPULSE = 22          // initial Y kick — slower take-off feels cinematic
+const PROBE_GRAVITY_SCALE = -0.025       // gentler continuous propulsion (longer flight)
+const PROBE_EJECT_MIN_ALT = 95           // window starts higher (more travel)
+const PROBE_EJECT_MAX_ALT = 135          // tighter window — more challenging timing
+const PROBE_MAX_FLIGHT_TIME = 50         // safety: capsule auto-fires if player misses
+
+// Capsule (Capa 4)
+let capsuleBody = null, capsuleMesh = null
+let capsuleCamera = null
+let capsuleVelocity = new THREE.Vector3()
+const CAPSULE_SPEED = 12                 // slower so mouse-aim has room to work
+const CAPSULE_NUDGE_FORCE = 4            // legacy A/D fallback
+const CAPSULE_TIMEOUT = 22               // capsule despawns if no capture (seconds)
+const CAPSULE_MOUSE_STEER_FORCE = 26     // mouse-aim steering force (Capa 4 v2)
+let _capsuleStart = 0
+
+// SAT_SLOT — orbital capture target (a Three.js mesh + manual point-in-sphere check)
+let satSlotMesh = null
+let satSlotPos = new THREE.Vector3()
+const SAT_SLOT_ALTITUDE_OFFSET = 170     // meters above launch site (further away)
+const SAT_SLOT_ORBITAL_RADIUS = 140      // distance from launch point on horizontal plane (further)
+const SAT_SLOT_CAPTURE_RADIUS = 14       // tighter — must aim well
+let _satSlotAngle = 0
+
+// Anchor flag — when true, rover is locked in place during launch prep
+let roverAnchored = false
+let _roverAnchorPos = null
+
+// ─── v2 Feature globals (rework session) ─────────────────────────────────
+let drillCamMode = 'floor'              // 'floor' (under chassis) | 'front' (over hood, fish-eye)
+let drillHaloLight = null               // PointLight under rover during drilling
+let drillTripodMeshes = []              // GLB-placeholder legs that appear during launch prep
+let _drillCrouchPct = 0                 // 0..1 chassis crouch amount during drilling
+let _capsuleMouseX = 0, _capsuleMouseY = 0  // -1..1 normalized mouse position inside capsule panel
+let _capsuleMouseActive = false
+let _launchCountdownTimer = null
+let _missionReturnAnim = null           // {start, duration} for cinematic camera return after capture
+
+// ═══════════════════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════════════════
 async function init() {
@@ -278,6 +339,11 @@ async function init() {
   // UI Setup
   await loadGLBCatalog()
   setupUI()
+
+  // CAPA 1 — TORNO / DRILL MODE (additive)
+  initDrillModule()
+  // CAPA 2/3/4 — PROBE / EJECT / CAPSULE (additive)
+  initProbeModule()
 
   // Events
   setupEvents()
@@ -1650,6 +1716,17 @@ function animate() {
   // Hook rope
   tickHookRope(FIXED_DT)
 
+  // CAPA 1 — drill sampling (cheap; early-outs when panel closed)
+  tickDrillSampling(FIXED_DT)
+  // CAPA 2 — launch prep gyroscope + rover anchoring
+  tickLaunchPrep()
+  // CAPA 2/3 — probe flight + altitude bar + eject window detection
+  tickProbe(FIXED_DT)
+  // CAPA 4 — capsule guidance + sat_slot capture check
+  tickCapsule(FIXED_DT)
+  // CAPA 4 — sat_slot orbit motion (only while probe/capsule alive)
+  if (satSlotMesh) tickSatSlot(FIXED_DT)
+
   // World zones
   tickWorldZones(FIXED_DT)
 
@@ -1672,6 +1749,12 @@ function animate() {
   if (minimapOpen) renderMinimapScissor()
   // Right View — 3D side scissor render
   if (rightViewOpen) renderRightViewScissor()
+  // CAPA 1 — TORNO interior cam scissor render
+  if (drillCamOpen) renderDrillCamScissor()
+  // CAPA 2/3 — PROBE orbital scissor render
+  renderProbeCamScissor()
+  // CAPA 4 — CAPSULE chase scissor render
+  renderCapsuleCamScissor()
 
   stats.update()
 }
@@ -4119,6 +4202,1100 @@ function renderRightViewScissor() {
 function showToast(msg,color='#B4FF50',duration=2500){const t=document.createElement('div');t.style.cssText=`position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);border:0.5px solid ${color};color:${color};font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:0.08em;padding:8px 16px;border-radius:2px;pointer-events:none;z-index:9999;animation:toastIn 0.2s ease,toastOut 0.3s ease ${duration-300}ms forwards;`;t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),duration)}
 function syncOrbitalBtn(){const btnOrb=document.getElementById('btn-orbital'),labelEl=document.getElementById('btn-orbital-label');if(!btnOrb)return;if(carSettings.orbitControls){btnOrb.classList.add('orbital-on');if(labelEl)labelEl.textContent='FREE [O]'}else{btnOrb.classList.remove('orbital-on');if(labelEl)labelEl.textContent='ORBIT [O]'}}
 function setLoading(text,pct){const status=document.getElementById('loader-status'),bar=document.getElementById('loader-bar');if(status)status.textContent=text;if(bar)bar.style.width=pct+'%'}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CAPA 1 — DRILL / TORNO MODE (additive — does not touch any existing system)
+//   • Interior POV camera rendered into #drill-cam-panel via scissor
+//   • Backdrop-filter on the panel gives the B/N + scanline look
+//   • Hold [E] while panel is open to sample the biome under the rover
+//   • Up to 7 samples stored in window.roverSamples, surfaced in #drill-hud
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Map a vertical position to a biome bucket using existing biomeSettings thresholds.
+// Returns { name, colors:[hex...] } — colors are read live so Settings panel edits propagate.
+// Biome palette uses 4-7 colors (the focus biome gets all of its hues + the neighbouring ones'
+// accent for a richer sample). This eliminates the prior "all-grey" sample bug — colors are now
+// real hex strings, never affected by any UI backdrop-filter.
+function getBiomeAtY(y) {
+  const b = biomeSettings
+  if (y < b.waterLevel) {
+    return { name: 'WATER', colors: [b.waterColorDeep, b.waterColor, b.sandColor1, b.sandColor2] }
+  }
+  if (y < b.sandEnd) {
+    return { name: 'SAND',  colors: [b.sandColor1, b.sandColor2, b.dirtColor1, b.waterColor, b.dirtColor2] }
+  }
+  if (y < b.dirtEnd) {
+    return { name: 'DIRT',  colors: [b.dirtColor1, b.dirtColor2, b.sandColor2, b.grassColor1, b.sandColor1] }
+  }
+  return { name: 'GRASS', colors: [b.grassColor1, b.grassColor2, b.dirtColor1, b.dirtColor2, b.sandColor2] }
+}
+
+// Get terrain height directly under the rover (uses existing getTerrainHeight)
+function _drillGetGroundY() {
+  if (!chassisBody) return 0
+  const p = chassisBody.translation()
+  return getTerrainHeight(p.x, p.z)
+}
+
+// Push one sample, flash HUD if full, refresh the slots, show big central popup (v2)
+function sampleBiome() {
+  if (!chassisBody) return
+  if (roverSamples.length >= MAX_SAMPLES) {
+    _drillBlinkUntil = performance.now() + 600
+    updateDrillHUD()
+    console.log('[DRILL] HUD full — eject probe to clear samples')
+    return
+  }
+  const p = chassisBody.translation()
+  const groundY = _drillGetGroundY()
+  const biome = getBiomeAtY(groundY + 0.01) // sample at the surface, not above the rover
+  const sample = {
+    id: roverSamples.length,
+    biome: biome.name,
+    colors: biome.colors.slice(),
+    position: { x: p.x, y: groundY, z: p.z },
+    t: Date.now()
+  }
+  roverSamples.push(sample)
+  window.roverSamples = roverSamples
+  updateDrillHUD()
+  _showSamplePopup(sample)
+  console.log('[DRILL] sample collected:', sample)
+  if (typeof _refreshLaunchBtn === 'function') _refreshLaunchBtn()
+}
+
+// v2 — large centered popup that announces the new sample
+function _showSamplePopup(sample) {
+  const popup = document.getElementById('drill-sample-popup')
+  if (!popup) return
+  const biomeEl = document.getElementById('drill-popup-biome')
+  const swatchesEl = document.getElementById('drill-popup-swatches')
+  const coordsEl = document.getElementById('drill-popup-coords')
+  if (biomeEl) biomeEl.textContent = sample.biome
+  if (coordsEl) coordsEl.textContent = `@ ${sample.position.x.toFixed(0)},${sample.position.z.toFixed(0)} · #${roverSamples.length}/${MAX_SAMPLES}`
+  if (swatchesEl) {
+    swatchesEl.innerHTML = ''
+    sample.colors.forEach(hex => {
+      const s = document.createElement('div')
+      s.style.cssText = `width:24px;height:24px;border-radius:50%;background:${hex};border:1.5px solid rgba(255,255,255,0.3);box-shadow:0 0 12px ${hex}88;`
+      swatchesEl.appendChild(s)
+    })
+  }
+  // Tint the border with the dominant biome color
+  popup.style.borderColor = sample.colors[0]
+  popup.style.boxShadow = `0 0 50px ${sample.colors[0]}66`
+  popup.style.display = 'block'
+  popup.style.animation = 'drillPopupIn 0.42s cubic-bezier(0.34,1.56,0.64,1) forwards'
+  clearTimeout(_showSamplePopup._t)
+  _showSamplePopup._t = setTimeout(() => {
+    popup.style.animation = 'drillPopupOut 0.35s ease forwards'
+    setTimeout(() => { popup.style.display = 'none' }, 380)
+  }, 1900)
+}
+
+// v2 — Builds 7 glass test tubes inside #drill-hud-slots, fills each with biome colors.
+// Reading colors AS HEX STRINGS guarantees no UI backdrop-filter desaturates them.
+function updateDrillHUD() {
+  const counter = document.getElementById('drill-hud-counter')
+  if (counter) counter.textContent = `${roverSamples.length} / ${MAX_SAMPLES}`
+  const biomeNameEl = document.getElementById('drill-hud-biome-name')
+  if (biomeNameEl) {
+    const groundY = _drillGetGroundY()
+    const cur = getBiomeAtY(groundY + 0.01)
+    biomeNameEl.textContent = cur.name
+  }
+  const slotsContainer = document.getElementById('drill-hud-slots')
+  if (slotsContainer) {
+    // Rebuild all 7 tubes (cheap; called only on sample/sample-fail)
+    slotsContainer.innerHTML = ''
+    for (let i = 0; i < MAX_SAMPLES; i++) {
+      const tube = document.createElement('div')
+      tube.className = 'glass-tube'
+      tube.dataset.slot = i
+      const s = roverSamples[i]
+      const cap = document.createElement('div'); cap.className = 'tube-cap'
+      const body = document.createElement('div'); body.className = 'tube-body'
+      const fill = document.createElement('div'); fill.className = 'tube-fill'
+      const meniscus = document.createElement('div'); meniscus.className = 'tube-meniscus'
+      const shine = document.createElement('div'); shine.className = 'tube-shine'
+      if (s) {
+        // Use all available colors as a multi-stop vertical gradient (top→bottom: lightest first)
+        const stops = s.colors.map((c, idx) => `${c} ${(idx / (s.colors.length - 1) * 100).toFixed(0)}%`).join(', ')
+        fill.style.background = `linear-gradient(180deg, ${stops})`
+        fill.style.height = '92%'
+        meniscus.style.bottom = '92%'
+        meniscus.style.background = `linear-gradient(180deg, ${s.colors[0]}cc, transparent)`
+        tube.title = `${s.biome} @ (${s.position.x.toFixed(0)}, ${s.position.z.toFixed(0)})`
+        cap.style.background = `linear-gradient(180deg, ${s.colors[0]}, ${s.colors[1] || s.colors[0]})`
+      } else {
+        fill.style.height = '0%'
+      }
+      body.appendChild(fill)
+      body.appendChild(meniscus)
+      tube.appendChild(cap)
+      tube.appendChild(body)
+      tube.appendChild(shine)
+      slotsContainer.appendChild(tube)
+    }
+  }
+  const hud = document.getElementById('drill-hud')
+  if (hud) {
+    const blink = performance.now() < _drillBlinkUntil
+    hud.style.borderColor = blink ? '#FF4444' : (roverSamples.length >= MAX_SAMPLES ? '#FFB432' : 'rgba(0,255,224,0.4)')
+    hud.style.boxShadow = blink
+      ? '0 0 28px rgba(255,68,68,0.4),inset 0 0 24px rgba(255,68,68,0.08)'
+      : (roverSamples.length >= MAX_SAMPLES
+          ? '0 0 28px rgba(255,180,50,0.45),inset 0 0 24px rgba(255,180,50,0.08)'
+          : '0 0 28px rgba(0,255,224,0.12),inset 0 0 24px rgba(0,255,224,0.04)')
+  }
+}
+
+// v2 — drill hold logic: 2.4s, chassis crouch, halo light, percent text, telemetry side panel
+function tickDrillSampling(dt) {
+  const eHeld = !!keys.KeyE && drillCamOpen && !constructorMode && !escapeMenuOpen && !teleportMenuOpen && probeState === 'idle'
+  const ring = document.getElementById('drill-progress-ring')
+  const pctEl = document.getElementById('drill-progress-pct')
+  const status = document.getElementById('drill-cam-status')
+  const telDepth = document.getElementById('drill-tel-depth')
+  const telBiome = document.getElementById('drill-tel-biome')
+  const telSub = document.getElementById('drill-tel-sub')
+
+  if (eHeld && roverSamples.length < MAX_SAMPLES) {
+    drillSampleHoldActive = true
+    drillSampleHoldTime += dt
+    const pct = Math.min(1, drillSampleHoldTime / DRILL_SAMPLE_HOLD_DURATION)
+    // Ring + percent
+    if (ring)  { ring.style.display = 'block'; ring.style.transform = `rotate(${pct * 360}deg)`; ring.style.borderTopColor = pct >= 1 ? '#B4FF50' : '#00FFE0' }
+    if (pctEl) { pctEl.style.display = 'block'; pctEl.textContent = `${Math.round(pct * 100)}%`; pctEl.style.color = pct >= 1 ? '#B4FF50' : '#00FFE0' }
+    if (status) { status.textContent = `DRILL · ${Math.round(pct * 100)}%`; status.style.color = '#00FFE0' }
+    if (telDepth) telDepth.textContent = `${(pct * 1.4).toFixed(2)}m`
+    if (telBiome) { const cur = getBiomeAtY(_drillGetGroundY() + 0.01); telBiome.textContent = cur.name }
+    if (telSub) telSub.textContent = drillCamMode === 'floor' ? 'FLOOR' : 'FRONT'
+    // Chassis crouch (smoothly suspend the wheels) — visible in ALL cameras
+    _drillCrouchPct = THREE.MathUtils.lerp(_drillCrouchPct, pct, 0.15)
+    _applyChassisCrouch(_drillCrouchPct)
+    // Halo light under the rover
+    _ensureDrillHaloLight()
+    if (drillHaloLight) {
+      drillHaloLight.intensity = 6 + pct * 22
+      drillHaloLight.color.setHex(pct >= 1 ? 0xb4ff50 : 0x00ffe0)
+      drillHaloLight.position.set(chassisPos.x, chassisPos.y - 0.4, chassisPos.z)
+    }
+    if (pct >= 1) {
+      sampleBiome()
+      drillSampleHoldTime = 0
+    }
+  } else {
+    if (drillSampleHoldActive) {
+      drillSampleHoldActive = false
+      drillSampleHoldTime = 0
+      if (ring) ring.style.display = 'none'
+      if (pctEl) pctEl.style.display = 'none'
+      if (status) {
+        if (roverSamples.length >= MAX_SAMPLES) { status.textContent = 'FULL · LAUNCH'; status.style.color = '#FFB432' }
+        else { status.textContent = 'IDLE'; status.style.color = 'rgba(255,255,255,0.5)' }
+      }
+    }
+    // Smooth restore crouch
+    if (_drillCrouchPct > 0.001) {
+      _drillCrouchPct = THREE.MathUtils.lerp(_drillCrouchPct, 0, 0.18)
+      _applyChassisCrouch(_drillCrouchPct)
+    }
+    // Fade halo
+    if (drillHaloLight && drillHaloLight.intensity > 0.2) {
+      drillHaloLight.intensity *= 0.85
+    } else if (drillHaloLight && drillHaloLight.intensity <= 0.2) {
+      drillHaloLight.intensity = 0
+    }
+  }
+  // Periodic biome readout refresh
+  if (drillCamOpen) {
+    if (!tickDrillSampling._frame) tickDrillSampling._frame = 0
+    if (++tickDrillSampling._frame % 15 === 0) {
+      const biomeNameEl = document.getElementById('drill-hud-biome-name')
+      if (biomeNameEl) {
+        const groundY = _drillGetGroundY()
+        biomeNameEl.textContent = getBiomeAtY(groundY + 0.01).name
+      }
+    }
+  }
+}
+
+// Lazy-create a colored point light under the rover; persistent across drill cycles
+function _ensureDrillHaloLight() {
+  if (drillHaloLight) return
+  drillHaloLight = new THREE.PointLight(0x00ffe0, 0, 8, 2)
+  scene.add(drillHaloLight)
+}
+
+// Smoothly compress the wheel suspension so the chassis sinks while drilling.
+// Restores to SUSP_REST on release (additive — only changes during drill).
+function _applyChassisCrouch(pct) {
+  if (!vehicle || pct < 0.001 && _applyChassisCrouch._lastPct < 0.001) { _applyChassisCrouch._lastPct = pct; return }
+  const restLen = THREE.MathUtils.lerp(SUSP_REST, 0.12, pct)
+  const stiff   = THREE.MathUtils.lerp(12, 60, pct)
+  for (let i = 0; i < 4; i++) {
+    try { vehicle.setWheelSuspensionRestLength(i, restLen) } catch(e){}
+    try { vehicle.setWheelSuspensionStiffness(i, stiff) } catch(e){}
+  }
+  _applyChassisCrouch._lastPct = pct
+}
+_applyChassisCrouch._lastPct = 0
+
+// v2 — supports two cam modes: 'floor' (under chassis) | 'front' (fish-eye, hood-mount)
+const _drillCamFwd = new THREE.Vector3()
+const _drillCamUp  = new THREE.Vector3()
+const _drillCamPos = new THREE.Vector3()
+const _drillLookAt = new THREE.Vector3()
+function renderDrillCamScissor() {
+  if (!chassisBody) return
+  const panel = document.getElementById('drill-cam-panel')
+  if (!panel || panel.style.display === 'none') return
+  if (!drillCamera) drillCamera = new THREE.PerspectiveCamera(95, 1, 0.1, 200)
+  const rect = panel.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+
+  _drillCamUp.set(0, 1, 0).applyQuaternion(chassisQuat)
+  _drillCamFwd.set(1, 0, 0).applyQuaternion(chassisQuat)
+
+  if (drillCamMode === 'front') {
+    // Fish-eye over the hood — much wider FOV, low to the ground, looking forward + slightly down
+    drillCamera.fov = 130
+    _drillCamPos.copy(chassisPos).addScaledVector(_drillCamFwd, 1.2).addScaledVector(_drillCamUp, 0.6)
+    _drillLookAt.copy(chassisPos).addScaledVector(_drillCamFwd, 6).addScaledVector(_drillCamUp, -0.8)
+  } else {
+    // Floor mode (default) — under the chassis looking down
+    drillCamera.fov = 95
+    _drillCamPos.copy(chassisPos).addScaledVector(_drillCamUp, 0.55)
+    _drillLookAt.copy(chassisPos).addScaledVector(_drillCamUp, -2.5).addScaledVector(_drillCamFwd, 0.6)
+  }
+
+  drillCamera.position.copy(_drillCamPos)
+  drillCamera.up.copy(_drillCamUp)
+  drillCamera.lookAt(_drillLookAt)
+  drillCamera.aspect = rect.width / rect.height
+  drillCamera.updateProjectionMatrix()
+
+  const canvasRect = renderer.domElement.getBoundingClientRect()
+  const sx = Math.round(rect.left - canvasRect.left)
+  const sy = Math.round(rect.top  - canvasRect.top)
+  renderer.setScissorTest(true)
+  renderer.setScissor(sx, sy, Math.round(rect.width), Math.round(rect.height))
+  renderer.setViewport(sx, sy, Math.round(rect.width), Math.round(rect.height))
+  renderer.render(scene, drillCamera)
+  renderer.setScissorTest(false)
+  renderer.setViewport(0, 0, renderer.domElement.clientWidth, renderer.domElement.clientHeight)
+}
+
+// One-time setup: button toggle, panel drag/resize/close, [E] / [T] listeners
+function initDrillModule() {
+  if (initDrillModule._ran) return
+  initDrillModule._ran = true
+
+  const btnDrill = document.getElementById('btn-drill')
+  const panel    = document.getElementById('drill-cam-panel')
+  const hud      = document.getElementById('drill-hud')
+  const closeBtn = document.getElementById('drill-cam-close')
+  const handle   = document.getElementById('drill-cam-resize-handle')
+
+  function openPanel(open) {
+    drillCamOpen = open
+    if (panel) panel.style.display = open ? 'block' : 'none'
+    if (hud)   hud.style.display   = open ? 'block' : 'none'
+    if (btnDrill) {
+      btnDrill.style.background = open ? 'rgba(0,255,224,0.18)' : 'rgba(0,0,0,0.82)'
+      btnDrill.style.color      = open ? '#00FFE0' : 'rgba(255,255,255,0.55)'
+      btnDrill.style.borderColor = open ? 'rgba(0,255,224,0.7)' : 'rgba(255,255,255,0.12)'
+    }
+    if (open) {
+      // First-open positioning hint
+      if (panel && !panel._drillInitialized) {
+        panel._drillInitialized = true
+        try { makeDraggable('drill-cam-panel', 'drill-cam-label') } catch(e){}
+        try { attachResizeHandle(panel, handle, 'right') } catch(e){}
+      }
+      if (hud && !hud._drillHudDraggable) {
+        hud._drillHudDraggable = true
+        try { makeDraggable('drill-hud', 'drill-hud-header') } catch(e){}
+      }
+      updateDrillHUD()
+      showToast('TORNO ON · HOLD [E] TO DRILL', '#FFFFFF', 1500)
+    } else {
+      drillSampleHoldActive = false
+      drillSampleHoldTime = 0
+      const ring = document.getElementById('drill-progress-ring')
+      if (ring) ring.style.display = 'none'
+    }
+  }
+
+  if (btnDrill) btnDrill.addEventListener('click', () => openPanel(!drillCamOpen))
+  if (closeBtn) closeBtn.addEventListener('click', () => openPanel(false))
+
+  // v2 — FLOOR / FRONT cam toggle
+  const tabFloor = document.getElementById('drill-cam-floor')
+  const tabFront = document.getElementById('drill-cam-front')
+  function setCamMode(mode) {
+    drillCamMode = mode
+    if (tabFloor) tabFloor.classList.toggle('active', mode === 'floor')
+    if (tabFront) tabFront.classList.toggle('active', mode === 'front')
+    if (tabFloor) {
+      tabFloor.style.background = mode === 'floor' ? 'rgba(0,255,224,0.18)' : 'transparent'
+      tabFloor.style.color      = mode === 'floor' ? '#00FFE0' : 'rgba(255,255,255,0.55)'
+    }
+    if (tabFront) {
+      tabFront.style.background = mode === 'front' ? 'rgba(0,255,224,0.18)' : 'transparent'
+      tabFront.style.color      = mode === 'front' ? '#00FFE0' : 'rgba(255,255,255,0.55)'
+    }
+    const telSub = document.getElementById('drill-tel-sub')
+    if (telSub) telSub.textContent = mode === 'floor' ? 'FLOOR' : 'FRONT'
+    showToast(`TORNO CAM: ${mode.toUpperCase()}`, '#00FFE0', 900)
+  }
+  if (tabFloor) tabFloor.addEventListener('click', () => setCamMode('floor'))
+  if (tabFront) tabFront.addEventListener('click', () => setCamMode('front'))
+
+  // Keyboard — additive listener, does not interfere with setupEvents()
+  // KeyT toggles the panel. KeyE is read in tickDrillSampling via the existing keys{} map.
+  addEventListener('keydown', (e) => {
+    if (e.repeat) return
+    if (constructorMode || escapeMenuOpen || teleportMenuOpen || freeTpActive) return
+    if (e.code === 'KeyT') { e.preventDefault(); openPanel(!drillCamOpen); return }
+  })
+
+  // Initial HUD render so the slots have correct background even when first opened
+  updateDrillHUD()
+  console.log('[DRILL_MODE] initialized — press [T] to open TORNO interior cam · hold [E] to sample')
+}
+
+// Public API for Capa 2 (probe will consume samples)
+window.DrillDebug = {
+  list: () => { console.table(roverSamples); return roverSamples },
+  add:  () => { sampleBiome() },
+  clear: () => { roverSamples = []; window.roverSamples = roverSamples; updateDrillHUD(); console.log('[DRILL] samples cleared') },
+  open:  () => { const b = document.getElementById('btn-drill'); if (b) b.click() }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CAPA 2/3/4 — PROBE / EJECT / CAPSULE / SAT_SLOT (additive)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ──────── Helpers ────────
+function _refreshLaunchBtn() {
+  const btn = document.getElementById('btn-launch-prep')
+  if (!btn) return
+  // Show only when at least 1 sample AND not already in a launch flow
+  const showable = roverSamples.length >= 1 && probeState === 'idle' && drillCamOpen
+  btn.style.display = showable ? 'block' : 'none'
+}
+
+// ──────── LAUNCH PREP ────────
+function startLaunchPrep() {
+  if (probeState !== 'idle') return
+  if (roverSamples.length === 0) { showToast('NO SAMPLES TO LAUNCH', '#FF4444', 1500); return }
+  if (vehicleMode === 'float') setDriveMode('gravity')
+  if (vehicleMode === 'hook')  setDriveMode('gravity')
+  probeState = 'prep'
+  roverAnchored = true
+  if (chassisBody) {
+    const t = chassisBody.translation()
+    _roverAnchorPos = { x: t.x, y: t.y, z: t.z }
+    chassisBody.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    chassisBody.setAngvel({ x: 0, y: 0, z: 0 }, true)
+  }
+  const hud = document.getElementById('launch-prep-hud')
+  if (hud) hud.style.display = 'block'
+  const sm = document.getElementById('launch-prep-samples')
+  if (sm) sm.textContent = `SAMPLES ABOARD: ${roverSamples.length}`
+  // v2 — dim background, spawn tripod legs placeholder
+  _setLaunchDimmer(true)
+  _spawnTripodLegs()
+  startLaunchPrep._tStart = performance.now()
+  showToast('LAUNCH PREP · BALANCE THE ROVER', '#FFB432', 1800)
+  console.log('[PROBE] launch prep started')
+}
+
+function _setLaunchDimmer(on) {
+  const d = document.getElementById('launch-dimmer')
+  if (!d) return
+  d.style.display = on ? 'block' : 'none'
+  d.style.opacity = on ? '1' : '0'
+}
+
+function _spawnTripodLegs() {
+  _despawnTripodLegs()
+  if (!chassisGroup) return
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.6, roughness: 0.4 })
+  const positions = [
+    [ 0.85, 0,  0.55],
+    [ 0.85, 0, -0.55],
+    [-0.85, 0,  0.55],
+    [-0.85, 0, -0.55],
+  ]
+  positions.forEach(p => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 0.55, 8), legMat)
+    leg.position.set(p[0], p[1] - 0.35, p[2])
+    leg.scale.y = 0.05
+    leg.castShadow = true
+    chassisGroup.add(leg)
+    drillTripodMeshes.push(leg)
+  })
+}
+
+function _despawnTripodLegs() {
+  drillTripodMeshes.forEach(leg => {
+    if (leg.parent) leg.parent.remove(leg)
+    if (leg.geometry) leg.geometry.dispose()
+    if (leg.material) leg.material.dispose()
+  })
+  drillTripodMeshes = []
+}
+
+function cancelLaunchPrep() {
+  if (probeState !== 'prep') return
+  probeState = 'idle'
+  roverAnchored = false
+  _roverAnchorPos = null
+  const hud = document.getElementById('launch-prep-hud')
+  if (hud) hud.style.display = 'none'
+  _setLaunchDimmer(false)
+  _despawnTripodLegs()
+  if (_launchCountdownTimer) { clearTimeout(_launchCountdownTimer); _launchCountdownTimer = null }
+  const cd = document.getElementById('launch-countdown')
+  if (cd) cd.style.display = 'none'
+  _refreshLaunchBtn()
+  showToast('LAUNCH CANCELLED', '#FF4444', 1200)
+  console.log('[PROBE] launch prep cancelled')
+}
+
+// v2 — wraps the original async launchProbe so we get a 5-4-3-2-1 cinematic countdown first
+function startLaunchCountdown() {
+  if (probeState !== 'prep') return
+  // Hide the prep HUD during countdown but keep dimmer + legs
+  const hud = document.getElementById('launch-prep-hud')
+  if (hud) hud.style.display = 'none'
+  const cd = document.getElementById('launch-countdown')
+  if (!cd) { launchProbe(); return }
+  let n = 5
+  cd.style.display = 'block'
+  cd.textContent = n
+  cd.style.color = '#FFB432'
+  cd.style.animation = 'countdownTick 1s ease forwards'
+  const tick = () => {
+    n -= 1
+    if (n <= 0) {
+      cd.textContent = '▲ LAUNCH'
+      cd.style.fontSize = '90px'
+      cd.style.color = '#B4FF50'
+      cd.style.animation = 'countdownTick 0.9s ease forwards'
+      setTimeout(() => {
+        cd.style.display = 'none'
+        cd.style.fontSize = '140px'
+        launchProbe()
+      }, 850)
+      return
+    }
+    cd.textContent = n
+    cd.style.color = n <= 2 ? '#FF4444' : (n === 3 ? '#FFB432' : '#00FFE0')
+    // Restart animation
+    cd.style.animation = 'none'
+    void cd.offsetWidth
+    cd.style.animation = 'countdownTick 1s ease forwards'
+    _launchCountdownTimer = setTimeout(tick, 950)
+  }
+  _launchCountdownTimer = setTimeout(tick, 950)
+}
+
+// v2 — skate-trick balance: arrow on horizontal bar + circular gyro + sweet zone pulse + cling feedback
+function tickLaunchPrep() {
+  if (probeState !== 'prep' || !chassisBody) return
+  if (_roverAnchorPos) {
+    chassisBody.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    chassisBody.setAngvel({ x: 0, y: 0, z: 0 }, true)
+  }
+  const chassisUp    = new THREE.Vector3(0, 1, 0).applyQuaternion(chassisQuat)
+  const chassisFwd   = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisQuat)
+  const chassisRight = new THREE.Vector3(0, 0, 1).applyQuaternion(chassisQuat)
+  const tiltAngleRad = Math.acos(THREE.MathUtils.clamp(chassisUp.y, -1, 1))
+  const tiltDeg = tiltAngleRad * 180 / Math.PI
+  const dotX = chassisUp.dot(chassisRight)
+  const dotY = chassisUp.dot(chassisFwd)
+  // Horizontal balance bar: combine roll (X) and pitch (Y) into a single arrow position [-1..1]
+  // (most intuitive: tilt left/right dominates, pitch fwd/back is secondary)
+  const barNorm = THREE.MathUtils.clamp((dotX * 0.7 + dotY * 0.3) * 1.6, -1, 1) // amplified for sensitivity
+  const arrow = document.getElementById('balance-arrow')
+  if (arrow) arrow.style.left = `${50 + barNorm * 45}%`
+  // Mini gyro dot
+  const dot = document.getElementById('gyro-dot')
+  if (dot) {
+    const half = 40
+    dot.style.left = `calc(50% + ${dotX * half}px)`
+    dot.style.top  = `calc(50% - ${dotY * half}px)`
+  }
+  // Sweet zone pulse — brighter as we approach 0°
+  const sweet = document.getElementById('balance-sweet-zone')
+  const closeness = THREE.MathUtils.clamp(1 - (tiltDeg / 12), 0, 1)
+  if (sweet) {
+    const w = 60 + closeness * 60  // expands as you approach level
+    sweet.style.width = `${w}px`
+    sweet.style.background = closeness > 0.6
+      ? `rgba(180,255,80,${0.18 + closeness * 0.4})`
+      : 'rgba(180,255,80,0.18)'
+    sweet.style.animation = closeness > 0.65 ? 'balanceSweetPulse 0.6s ease infinite' : 'none'
+  }
+  const level = tiltDeg < 5 // tightened to 5° as requested
+  const status = document.getElementById('gyro-status')
+  if (status) {
+    status.textContent = `TILT: ${tiltDeg.toFixed(1)}° · ${level ? '◉ PERFECT LEVEL' : 'UNLEVEL'}`
+    status.style.color = level ? '#B4FF50' : 'rgba(255,180,50,0.85)'
+  }
+  // Continuous feedback ladder (Tony Hawk style "cling cling")
+  const fb = document.getElementById('gyro-feedback')
+  if (fb) {
+    let msg = '—', col = 'rgba(255,255,255,0.4)'
+    if (tiltDeg < 1)      { msg = '✦✦✦ INSANE BALANCE ✦✦✦'; col = '#B4FF50' }
+    else if (tiltDeg < 3) { msg = '✦✦ GREAT — HOLD IT'; col = '#B4FF50' }
+    else if (tiltDeg < 5) { msg = '✦ OK — STEADY';      col = '#FFB432' }
+    else if (tiltDeg < 8) { msg = '~ ALMOST THERE';     col = '#FFB432' }
+    else if (tiltDeg < 12){ msg = 'KEEP NIVELING…';     col = 'rgba(255,180,50,0.7)' }
+    else                  { msg = 'TOO MUCH TILT';      col = '#FF4444' }
+    if (fb.textContent !== msg) {
+      fb.textContent = msg
+      fb.style.color = col
+    }
+  }
+  // Tripod placeholder legs animate in over the first second
+  if (drillTripodMeshes.length > 0) {
+    const t0 = (performance.now() - (startLaunchPrep._tStart || performance.now())) / 1000
+    const lerp = THREE.MathUtils.clamp(t0, 0, 1)
+    drillTripodMeshes.forEach(leg => {
+      leg.scale.y = THREE.MathUtils.lerp(0.05, 1, lerp)
+      leg.position.y = chassisPos.y - 0.4 - (1 - lerp) * 0.3
+    })
+  }
+  const fireBtn = document.getElementById('btn-launch-fire')
+  if (fireBtn) {
+    fireBtn.disabled = !level
+    fireBtn.style.opacity = level ? '1' : '0.5'
+    fireBtn.style.cursor  = level ? 'pointer' : 'not-allowed'
+    fireBtn.style.background = level ? 'rgba(180,255,80,0.32)' : 'rgba(180,255,80,0.08)'
+    fireBtn.style.color = level ? '#FFFFFF' : 'rgba(180,255,80,0.4)'
+    fireBtn.style.borderColor = level ? '#B4FF50' : 'rgba(180,255,80,0.3)'
+    fireBtn.style.boxShadow = level ? '0 0 22px rgba(180,255,80,0.5)' : 'none'
+  }
+}
+
+// ──────── LAUNCH ────────
+async function launchProbe() {
+  if (probeState !== 'prep' || !chassisBody) return
+  console.log('[PROBE] launching with', roverSamples.length, 'samples')
+  // Transfer samples
+  probeSamples = roverSamples.slice()
+  // Hide prep HUD
+  const prepHud = document.getElementById('launch-prep-hud')
+  if (prepHud) prepHud.style.display = 'none'
+  // Build probe physics body
+  const t = chassisBody.translation()
+  probeLaunchPos = { x: t.x, y: t.y + 1.5, z: t.z }
+  const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
+    .setTranslation(probeLaunchPos.x, probeLaunchPos.y, probeLaunchPos.z)
+    .setLinearDamping(0.05)
+    .setAngularDamping(0.5)
+    .setGravityScale(PROBE_GRAVITY_SCALE)
+  probeBody = physicsWorld.createRigidBody(bodyDesc)
+  const colDesc = RAPIER.ColliderDesc.cylinder(0.7, 0.35).setMass(2.0).setRestitution(0)
+  physicsWorld.createCollider(colDesc, probeBody)
+  // Visual rocket placeholder (cone + cylinder + fins)
+  probeMesh = new THREE.Group()
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 0.35, 1.4, 16),
+    new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.5, roughness: 0.4 })
+  )
+  body.castShadow = true
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.35, 0.6, 16),
+    new THREE.MeshStandardMaterial({ color: 0xff4444, metalness: 0.4, roughness: 0.5 })
+  )
+  tip.position.y = 1.0
+  // Three small fins
+  const finMat = new THREE.MeshStandardMaterial({ color: 0xffb432, metalness: 0.3, roughness: 0.6 })
+  for (let i = 0; i < 3; i++) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.4, 0.4), finMat)
+    fin.position.y = -0.6
+    fin.position.x = Math.cos(i * Math.PI * 2 / 3) * 0.4
+    fin.position.z = Math.sin(i * Math.PI * 2 / 3) * 0.4
+    probeMesh.add(fin)
+  }
+  // Exhaust glow
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.4, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff8844, transparent: true, opacity: 0.8 })
+  )
+  glow.position.y = -0.9
+  glow.scale.set(1, 1.6, 1)
+  probeMesh.add(glow)
+  probeMesh.add(body, tip)
+  scene.add(probeMesh)
+  // Initial impulse — perpendicular to ground (world Y)
+  const mass = probeBody.mass()
+  probeBody.applyImpulse({ x: 0, y: PROBE_LAUNCH_IMPULSE * mass, z: 0 }, true)
+  probeState = 'flying'
+  _probeLaunchTime = performance.now()
+  // Open probe cam panel
+  const panel = document.getElementById('probe-cam-panel')
+  if (panel) {
+    panel.style.display = 'block'
+    if (!panel._probeInitialized) {
+      panel._probeInitialized = true
+      try { makeDraggable('probe-cam-panel', 'probe-cam-label') } catch(e){}
+      try { attachResizeHandle(panel, document.getElementById('probe-cam-resize-handle'), 'left') } catch(e){}
+      const closeBtn = document.getElementById('probe-cam-close')
+      if (closeBtn) closeBtn.addEventListener('click', () => { if (panel) panel.style.display = 'none' })
+    }
+  }
+  // Position the eject window band visually
+  const wrap = document.getElementById('probe-altitude-wrap')
+  const band = document.getElementById('probe-eject-window')
+  if (wrap && band) {
+    // Map [0..PROBE_EJECT_MAX_ALT*1.4] to bar height; bar is bottom-up
+    const range = PROBE_EJECT_MAX_ALT * 1.4
+    const minPct = (PROBE_EJECT_MIN_ALT / range) * 100
+    const maxPct = (PROBE_EJECT_MAX_ALT / range) * 100
+    band.style.bottom = minPct + '%'
+    band.style.height = (maxPct - minPct) + '%'
+  }
+  // Place the SAT_SLOT in orbit around the launch site
+  _spawnSatSlot()
+  showToast('▲ PROBE LAUNCHED · ROTATE WITH A/D · WATCH ALTITUDE', '#B4FF50', 2200)
+}
+
+// ──────── PROBE FLIGHT TICK ────────
+function tickProbe(dt) {
+  if (probeState !== 'flying' && probeState !== 'eject_window') return
+  if (!probeBody || !probeMesh) return
+  // Sync mesh
+  const p = probeBody.translation()
+  const r = probeBody.rotation()
+  probeMesh.position.set(p.x, p.y, p.z)
+  probeMesh.quaternion.set(r.x, r.y, r.z, r.w)
+  // Player rotates orbit angle with A/D (don't conflict with steering — steering only matters when grounded)
+  if (keys.KeyA) probeOrbitAngle -= dt * 1.6
+  if (keys.KeyD) probeOrbitAngle += dt * 1.6
+  // Compute altitude relative to launch
+  const altitude = p.y - probeLaunchPos.y
+  // Update altitude marker on the bar
+  const wrap = document.getElementById('probe-altitude-wrap')
+  const marker = document.getElementById('probe-alt-marker')
+  if (wrap && marker) {
+    const range = PROBE_EJECT_MAX_ALT * 1.4
+    const pct = THREE.MathUtils.clamp(altitude / range, 0, 1)
+    marker.style.bottom = (pct * 100) + '%'
+  }
+  // Status text
+  const status = document.getElementById('probe-cam-status')
+  if (status) status.textContent = `ALT: ${altitude.toFixed(0)}m`
+  // Eject window state
+  const ejectBtn = document.getElementById('btn-eject-capsule')
+  const inWindow = altitude >= PROBE_EJECT_MIN_ALT && altitude <= PROBE_EJECT_MAX_ALT
+  if (inWindow && probeState === 'flying') {
+    probeState = 'eject_window'
+    if (ejectBtn) ejectBtn.style.display = 'block'
+    showToast('◉ EJECT WINDOW · CLICK NOW', '#00FFE0', 1800)
+  } else if (!inWindow && probeState === 'eject_window' && altitude > PROBE_EJECT_MAX_ALT) {
+    // Missed the window
+    if (ejectBtn) ejectBtn.style.display = 'none'
+    _missedEjectWindow()
+    return
+  }
+  // Safety timeout — if 28s pass, auto-eject
+  if ((performance.now() - _probeLaunchTime) / 1000 > PROBE_MAX_FLIGHT_TIME) {
+    if (probeState === 'eject_window') ejectCapsule()
+    else _missedEjectWindow()
+  }
+}
+
+function _missedEjectWindow() {
+  if (probeState !== 'flying' && probeState !== 'eject_window') return
+  showToast('✗ PROBE LOST · NO EJECT', '#FF4444', 2200)
+  console.log('[PROBE] eject window missed — cleaning up')
+  _cleanupProbe()
+  // Reset rover state — samples lost
+  roverSamples = []
+  window.roverSamples = roverSamples
+  updateDrillHUD()
+  probeState = 'idle'
+  roverAnchored = false
+  _refreshLaunchBtn()
+}
+
+function _cleanupProbe() {
+  const ejectBtn = document.getElementById('btn-eject-capsule')
+  if (ejectBtn) ejectBtn.style.display = 'none'
+  if (probeMesh) { scene.remove(probeMesh); probeMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); probeMesh = null }
+  if (probeBody) { try { physicsWorld.removeRigidBody(probeBody) } catch(e){}; probeBody = null }
+  const panel = document.getElementById('probe-cam-panel')
+  if (panel) panel.style.display = 'none'
+  // v2 — clean up dimmer + tripod placeholder when leaving the launch flow
+  _setLaunchDimmer(false)
+  _despawnTripodLegs()
+}
+
+// ──────── PROBE CAM SCISSOR ────────
+const _probeCamPos = new THREE.Vector3()
+const _probeCamLook = new THREE.Vector3()
+function renderProbeCamScissor() {
+  const panel = document.getElementById('probe-cam-panel')
+  if (!panel || panel.style.display === 'none') return
+  if (!probeMesh) return
+  if (!probeCamera) {
+    probeCamera = new THREE.PerspectiveCamera(55, 1, 0.1, 600)
+  }
+  const rect = panel.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+  const dist = 8
+  const heightOff = 1.5
+  _probeCamPos.set(
+    probeMesh.position.x + Math.cos(probeOrbitAngle) * dist,
+    probeMesh.position.y + heightOff,
+    probeMesh.position.z + Math.sin(probeOrbitAngle) * dist
+  )
+  _probeCamLook.copy(probeMesh.position)
+  probeCamera.position.copy(_probeCamPos)
+  probeCamera.up.set(0, 1, 0)
+  probeCamera.lookAt(_probeCamLook)
+  probeCamera.aspect = rect.width / rect.height
+  probeCamera.updateProjectionMatrix()
+  const canvasRect = renderer.domElement.getBoundingClientRect()
+  const sx = Math.round(rect.left - canvasRect.left)
+  const sy = Math.round(rect.top  - canvasRect.top)
+  renderer.setScissorTest(true)
+  renderer.setScissor(sx, sy, Math.round(rect.width), Math.round(rect.height))
+  renderer.setViewport(sx, sy, Math.round(rect.width), Math.round(rect.height))
+  renderer.render(scene, probeCamera)
+  renderer.setScissorTest(false)
+  renderer.setViewport(0, 0, renderer.domElement.clientWidth, renderer.domElement.clientHeight)
+}
+
+// ──────── SAT_SLOT (Capa 4 capture target) ────────
+function _spawnSatSlot() {
+  if (satSlotMesh) { scene.remove(satSlotMesh); satSlotMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); satSlotMesh = null }
+  // Position on a horizontal orbit around the launch point
+  _satSlotAngle = Math.random() * Math.PI * 2
+  satSlotPos.set(
+    probeLaunchPos.x + Math.cos(_satSlotAngle) * SAT_SLOT_ORBITAL_RADIUS,
+    probeLaunchPos.y + SAT_SLOT_ALTITUDE_OFFSET,
+    probeLaunchPos.z + Math.sin(_satSlotAngle) * SAT_SLOT_ORBITAL_RADIUS
+  )
+  satSlotMesh = new THREE.Group()
+  const torus = new THREE.Mesh(
+    new THREE.TorusGeometry(4, 0.6, 12, 32),
+    new THREE.MeshStandardMaterial({ color: 0x00ffe0, emissive: 0x008866, emissiveIntensity: 0.6, metalness: 0.6, roughness: 0.3 })
+  )
+  torus.rotation.x = Math.PI / 2
+  satSlotMesh.add(torus)
+  // Center beacon
+  const beacon = new THREE.Mesh(
+    new THREE.SphereGeometry(0.8, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xb4ff50 })
+  )
+  satSlotMesh.add(beacon)
+  satSlotMesh.position.copy(satSlotPos)
+  scene.add(satSlotMesh)
+  console.log('[SAT_SLOT] spawned at', satSlotPos.toArray())
+}
+
+function tickSatSlot(dt) {
+  if (!satSlotMesh) return
+  // Slow orbit around launch point so it actually moves like a satellite
+  _satSlotAngle += dt * 0.05
+  satSlotPos.set(
+    probeLaunchPos.x + Math.cos(_satSlotAngle) * SAT_SLOT_ORBITAL_RADIUS,
+    probeLaunchPos.y + SAT_SLOT_ALTITUDE_OFFSET,
+    probeLaunchPos.z + Math.sin(_satSlotAngle) * SAT_SLOT_ORBITAL_RADIUS
+  )
+  satSlotMesh.position.copy(satSlotPos)
+  satSlotMesh.rotation.y += dt * 0.5
+}
+
+function _cleanupSatSlot() {
+  if (satSlotMesh) { scene.remove(satSlotMesh); satSlotMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); satSlotMesh = null }
+}
+
+// ──────── CAPSULE EJECT (Capa 3→4 transition) ────────
+function ejectCapsule() {
+  if (probeState !== 'eject_window' || !probeBody) return
+  console.log('[CAPSULE] ejecting toward sat_slot direction')
+  const probePos = probeBody.translation()
+  // Eject direction = horizontal toward SAT_SLOT (so capsule actually has a chance to reach it)
+  const toSat = new THREE.Vector3(
+    satSlotPos.x - probePos.x,
+    0,
+    satSlotPos.z - probePos.z
+  )
+  if (toSat.lengthSq() < 0.001) toSat.set(1, 0, 0)
+  toSat.normalize()
+  // Add a small upward component so the capsule reaches the orbital height
+  const dir = new THREE.Vector3(toSat.x, 0.45, toSat.z).normalize()
+  // Build capsule body — gravityScale 0 = perfect coast
+  const desc = RAPIER.RigidBodyDesc.dynamic()
+    .setTranslation(probePos.x + toSat.x * 1.5, probePos.y + 0.5, probePos.z + toSat.z * 1.5)
+    .setGravityScale(0)
+    .setLinearDamping(0)
+  capsuleBody = physicsWorld.createRigidBody(desc)
+  const cd = RAPIER.ColliderDesc.ball(0.45).setMass(0.4).setRestitution(0)
+  physicsWorld.createCollider(cd, capsuleBody)
+  capsuleVelocity.copy(dir).multiplyScalar(CAPSULE_SPEED)
+  capsuleBody.setLinvel({ x: capsuleVelocity.x, y: capsuleVelocity.y, z: capsuleVelocity.z }, true)
+  // Visual capsule — sphere with biome-color sample window
+  capsuleMesh = new THREE.Group()
+  const shell = new THREE.Mesh(
+    new THREE.SphereGeometry(0.45, 18, 12),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.6, roughness: 0.3 })
+  )
+  capsuleMesh.add(shell)
+  // Color band reflecting the first sample
+  if (probeSamples[0]) {
+    const band = new THREE.Mesh(
+      new THREE.TorusGeometry(0.46, 0.08, 8, 24),
+      new THREE.MeshBasicMaterial({ color: probeSamples[0].colors[0] })
+    )
+    capsuleMesh.add(band)
+  }
+  // Trail
+  const trail = new THREE.Mesh(
+    new THREE.ConeGeometry(0.3, 0.9, 12),
+    new THREE.MeshBasicMaterial({ color: 0x00ffe0, transparent: true, opacity: 0.7 })
+  )
+  trail.rotation.z = Math.PI / 2
+  trail.position.x = -0.6
+  capsuleMesh.add(trail)
+  scene.add(capsuleMesh)
+  // Hide eject button, free probe (let it drift away)
+  const ejectBtn = document.getElementById('btn-eject-capsule')
+  if (ejectBtn) ejectBtn.style.display = 'none'
+  // Open capsule chase cam (closes the probe panel)
+  const panel = document.getElementById('probe-cam-panel')
+  if (panel) panel.style.display = 'none'
+  const cpanel = document.getElementById('capsule-cam-panel')
+  if (cpanel) {
+    cpanel.style.display = 'block'
+    if (!cpanel._capsInitialized) {
+      cpanel._capsInitialized = true
+      try { makeDraggable('capsule-cam-panel', 'capsule-cam-label') } catch(e){}
+    }
+  }
+  probeState = 'capsule_flying'
+  _capsuleStart = performance.now()
+  showToast('◉ CAPSULE EJECTED · STEER WITH A/D', '#00FFE0', 1800)
+}
+
+// v2 — mouse-aimed steering. Capsule cruises forward at constant speed; mouse displacement
+//      from the panel center applies a steering force perpendicular to velocity.
+function tickCapsule(dt) {
+  if (probeState !== 'capsule_flying' || !capsuleBody || !capsuleMesh) return
+  const p = capsuleBody.translation()
+  const r = capsuleBody.rotation()
+  capsuleMesh.position.set(p.x, p.y, p.z)
+  capsuleMesh.quaternion.set(r.x, r.y, r.z, r.w)
+  // Compute steering vector based on mouse position (panel-relative, -1..1)
+  const v = capsuleBody.linvel()
+  const horiz = new THREE.Vector3(v.x, 0, v.z); horiz.normalize()
+  if (horiz.lengthSq() < 0.0001) horiz.set(1, 0, 0)
+  const right = new THREE.Vector3(-horiz.z, 0, horiz.x).normalize()
+  const up    = new THREE.Vector3(0, 1, 0)
+  const steerX = _capsuleMouseActive ? _capsuleMouseX : (keys.KeyA ? -1 : keys.KeyD ? 1 : 0)
+  const steerY = _capsuleMouseActive ? _capsuleMouseY : (keys.KeyW ? 1 : keys.KeyS ? -0.6 : 0)
+  const f = CAPSULE_MOUSE_STEER_FORCE
+  const nudge = {
+    x: right.x * steerX * f + up.x * steerY * f,
+    y: right.y * steerX * f + up.y * steerY * f,
+    z: right.z * steerX * f + up.z * steerY * f,
+  }
+  capsuleBody.applyImpulse(nudge, true)
+  // Renormalize speed to constant CAPSULE_SPEED so steering doesn't change throttle
+  const cur = capsuleBody.linvel()
+  const speed = Math.sqrt(cur.x*cur.x + cur.y*cur.y + cur.z*cur.z)
+  if (speed > 0.01) {
+    const k = CAPSULE_SPEED / speed
+    capsuleBody.setLinvel({ x: cur.x*k, y: cur.y*k, z: cur.z*k }, true)
+  }
+  // Distance + telemetry
+  const dx = satSlotPos.x - p.x, dy = satSlotPos.y - p.y, dz = satSlotPos.z - p.z
+  const dist = Math.sqrt(dx*dx + dy*dy + dz*dz)
+  const distEl = document.getElementById('capsule-distance')
+  if (distEl) distEl.textContent = `DIST: ${dist.toFixed(0)}m`
+  const tSpd = document.getElementById('cap-tel-spd')
+  const tAlt = document.getElementById('cap-tel-alt')
+  const tDrift = document.getElementById('cap-tel-drift')
+  if (tSpd) tSpd.textContent = speed.toFixed(0)
+  if (tAlt) tAlt.textContent = (p.y - probeLaunchPos.y).toFixed(0)
+  if (tDrift) {
+    const driftDeg = (Math.atan2(steerX, 1) * 180 / Math.PI).toFixed(0)
+    tDrift.textContent = `${driftDeg}°`
+  }
+  // Capture
+  if (dist <= SAT_SLOT_CAPTURE_RADIUS) {
+    _onSatSlotCapture()
+    return
+  }
+  // SAT_SLOT screen-space indicator
+  if (capsuleCamera) {
+    const ndc = satSlotPos.clone().project(capsuleCamera)
+    const ind = document.getElementById('sat-slot-indicator')
+    if (ind) {
+      const onScreen = ndc.x > -1 && ndc.x < 1 && ndc.y > -1 && ndc.y < 1 && ndc.z < 1
+      ind.style.display = 'block'
+      const px = onScreen ? (ndc.x * 0.5 + 0.5) * 100 : THREE.MathUtils.clamp((ndc.x * 0.5 + 0.5) * 100, 5, 95)
+      const py = onScreen ? (1 - (ndc.y * 0.5 + 0.5)) * 100 : THREE.MathUtils.clamp((1 - (ndc.y * 0.5 + 0.5)) * 100, 5, 95)
+      ind.style.left = px + '%'
+      ind.style.top  = py + '%'
+    }
+  }
+  if ((performance.now() - _capsuleStart) / 1000 > CAPSULE_TIMEOUT) {
+    showToast('✗ CAPSULE LOST IN SPACE', '#FF4444', 2200)
+    _missionFailed()
+  }
+}
+
+const _capsCamPos = new THREE.Vector3()
+const _capsCamLook = new THREE.Vector3()
+function renderCapsuleCamScissor() {
+  const panel = document.getElementById('capsule-cam-panel')
+  if (!panel || panel.style.display === 'none') return
+  if (!capsuleMesh) return
+  if (!capsuleCamera) capsuleCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 800)
+  const rect = panel.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+  // Chase from behind the velocity vector
+  const v = capsuleBody ? capsuleBody.linvel() : { x: 1, y: 0, z: 0 }
+  const dir = new THREE.Vector3(v.x, v.y, v.z).normalize()
+  if (dir.lengthSq() < 0.0001) dir.set(1, 0, 0)
+  _capsCamPos.copy(capsuleMesh.position).addScaledVector(dir, -6).add(new THREE.Vector3(0, 1.5, 0))
+  _capsCamLook.copy(capsuleMesh.position).addScaledVector(dir, 4)
+  capsuleCamera.position.copy(_capsCamPos)
+  capsuleCamera.up.set(0, 1, 0)
+  capsuleCamera.lookAt(_capsCamLook)
+  capsuleCamera.aspect = rect.width / rect.height
+  capsuleCamera.updateProjectionMatrix()
+  const canvasRect = renderer.domElement.getBoundingClientRect()
+  const sx = Math.round(rect.left - canvasRect.left)
+  const sy = Math.round(rect.top  - canvasRect.top)
+  renderer.setScissorTest(true)
+  renderer.setScissor(sx, sy, Math.round(rect.width), Math.round(rect.height))
+  renderer.setViewport(sx, sy, Math.round(rect.width), Math.round(rect.height))
+  renderer.render(scene, capsuleCamera)
+  renderer.setScissorTest(false)
+  renderer.setViewport(0, 0, renderer.domElement.clientWidth, renderer.domElement.clientHeight)
+}
+
+function _onSatSlotCapture() {
+  console.log('[SAT_SLOT] CAPTURE! samples:', probeSamples.length)
+  // Cleanup capsule + probe
+  if (capsuleMesh) { scene.remove(capsuleMesh); capsuleMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); capsuleMesh = null }
+  if (capsuleBody) { try { physicsWorld.removeRigidBody(capsuleBody) } catch(e){}; capsuleBody = null }
+  _cleanupProbe()
+  _cleanupSatSlot()
+  // Banner
+  const banner = document.getElementById('mission-complete-banner')
+  const detail = document.getElementById('mission-complete-detail')
+  if (detail) detail.textContent = `${probeSamples.length} SAMPLE${probeSamples.length === 1 ? '' : 'S'} DELIVERED TO ORBIT`
+  if (banner) {
+    banner.style.display = 'block'
+    setTimeout(() => { banner.style.display = 'none' }, 4500)
+  }
+  // Hide capsule cam, return to rover
+  const cpanel = document.getElementById('capsule-cam-panel')
+  if (cpanel) cpanel.style.display = 'none'
+  // Reset state
+  roverSamples = []
+  probeSamples = []
+  window.roverSamples = roverSamples
+  updateDrillHUD()
+  probeState = 'idle'
+  roverAnchored = false
+  _refreshLaunchBtn()
+  showToast('✦ MISSION COMPLETE · BACK TO ROVER', '#B4FF50', 2500)
+}
+
+function _missionFailed() {
+  if (capsuleMesh) { scene.remove(capsuleMesh); capsuleMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); capsuleMesh = null }
+  if (capsuleBody) { try { physicsWorld.removeRigidBody(capsuleBody) } catch(e){}; capsuleBody = null }
+  _cleanupProbe()
+  _cleanupSatSlot()
+  const cpanel = document.getElementById('capsule-cam-panel')
+  if (cpanel) cpanel.style.display = 'none'
+  // Samples are lost
+  roverSamples = []
+  probeSamples = []
+  window.roverSamples = roverSamples
+  updateDrillHUD()
+  probeState = 'idle'
+  roverAnchored = false
+  _refreshLaunchBtn()
+}
+
+// ──────── INIT (wire up buttons) ────────
+function initProbeModule() {
+  if (initProbeModule._ran) return
+  initProbeModule._ran = true
+  const btnPrep = document.getElementById('btn-launch-prep')
+  if (btnPrep) btnPrep.addEventListener('click', startLaunchPrep)
+  const btnCancel = document.getElementById('btn-launch-cancel')
+  if (btnCancel) btnCancel.addEventListener('click', cancelLaunchPrep)
+  const btnFire = document.getElementById('btn-launch-fire')
+  if (btnFire) btnFire.addEventListener('click', startLaunchCountdown)
+  const btnEject = document.getElementById('btn-eject-capsule')
+  if (btnEject) btnEject.addEventListener('click', ejectCapsule)
+  // Patch updateDrillHUD so the launch button refreshes whenever samples change
+  const _origUpdate = updateDrillHUD
+  // Note: we reassign by wrapping — additive monkey-patch (NO original code removed)
+  window._origUpdateDrillHUD = _origUpdate
+  // Listen for spacebar / Enter inside the eject window for keyboard eject
+  addEventListener('keydown', (e) => {
+    if (probeState === 'eject_window' && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyE')) {
+      e.preventDefault()
+      ejectCapsule()
+    }
+  })
+  // Periodic refresh of the launch button (safe; just toggles display)
+  setInterval(_refreshLaunchBtn, 250)
+
+  // v2 — Mouse aim for the capsule chase cam
+  const cpanel = document.getElementById('capsule-cam-panel')
+  const aimCursor = document.getElementById('capsule-aim-cursor')
+  if (cpanel) {
+    cpanel.addEventListener('mousemove', (e) => {
+      if (probeState !== 'capsule_flying') return
+      const rect = cpanel.getBoundingClientRect()
+      const nx = ((e.clientX - rect.left) / rect.width)  * 2 - 1
+      const ny = ((e.clientY - rect.top)  / rect.height) * 2 - 1
+      _capsuleMouseX =  THREE.MathUtils.clamp(nx, -1, 1)
+      _capsuleMouseY = -THREE.MathUtils.clamp(ny, -1, 1) // invert: up = positive
+      _capsuleMouseActive = true
+      if (aimCursor) {
+        const px = (e.clientX - rect.left)
+        const py = (e.clientY - rect.top)
+        aimCursor.style.left = px + 'px'
+        aimCursor.style.top  = py + 'px'
+      }
+    })
+    cpanel.addEventListener('mouseleave', () => { _capsuleMouseActive = false; _capsuleMouseX = 0; _capsuleMouseY = 0 })
+  }
+
+  // v2 — Sample popup is closable by clicking it
+  const popup = document.getElementById('drill-sample-popup')
+  if (popup) popup.addEventListener('click', () => { popup.style.display = 'none' })
+
+  console.log('[PROBE_MODULE v2] initialized — countdown + dimmer + mouse-aim cycle ready')
+}
+
+window.ProbeDebug = {
+  state: () => probeState,
+  prep:  startLaunchPrep,
+  fire:  launchProbe,
+  eject: ejectCapsule,
+  fail:  _missionFailed,
+  capture: _onSatSlotCapture,
+  satPos: () => satSlotPos.toArray()
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DEBUG TOOLS — exposed on window for console access
