@@ -545,10 +545,10 @@
   </div>
 
   <!-- TORNO SPLIT LAYOUT — casi full screen (8px margin), bottom 56px free for bottom bar -->
-  <div id="drill-split-wrap" style="display:none;position:fixed;top:0;left:0;right:0;bottom:56px;z-index:1200;flex-direction:row;gap:6px;padding:6px;pointer-events:none;box-sizing:border-box;">
+  <div id="drill-split-wrap" style="display:none;position:fixed;top:0;left:0;right:0;bottom:56px;z-index:1200;flex-direction:row;justify-content:space-between;gap:0;padding:6px;pointer-events:none;box-sizing:border-box;">
 
     <!-- LEFT — FLOOR cam (B&W fisheye, independently resizable) -->
-    <div id="drill-floor-panel" style="flex:1;min-width:300px;pointer-events:auto;overflow:hidden;border:1px solid rgba(255,255,255,0.35);border-radius:6px;position:relative;background:transparent;">
+    <div id="drill-floor-panel" style="flex:0 0 37vw;min-width:0;pointer-events:auto;overflow:hidden;border:1px solid rgba(255,255,255,0.35);border-radius:6px;position:relative;background:transparent;">
       <!-- VERY strong B&W fisheye overlay -->
       <div style="position:absolute;inset:0;backdrop-filter:grayscale(1) contrast(1.7) brightness(0.8);-webkit-backdrop-filter:grayscale(1) contrast(1.7) brightness(0.8);pointer-events:none;z-index:1;border-radius:6px;"></div>
       <!-- Barrel vignette (heavy) -->
@@ -583,7 +583,7 @@
     </div>
 
     <!-- RIGHT — FRONT cam (color 130°, independently resizable) -->
-    <div id="drill-front-panel" style="flex:1;min-width:300px;pointer-events:auto;overflow:hidden;border:1px solid rgba(0,255,224,0.4);border-radius:6px;position:relative;background:transparent;">
+    <div id="drill-front-panel" style="flex:0 0 37vw;min-width:0;pointer-events:auto;overflow:hidden;border:1px solid rgba(0,255,224,0.4);border-radius:6px;position:relative;background:transparent;">
       <!-- Intense scanlines (same weight as floor) -->
       <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(255,255,255,0.09) 0px,rgba(255,255,255,0.09) 1px,transparent 1px,transparent 2px);pointer-events:none;z-index:2;mix-blend-mode:overlay;border-radius:6px;"></div>
       <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,transparent 0px,transparent 6px,rgba(0,0,0,0.18) 6px,rgba(0,0,0,0.18) 8px);pointer-events:none;z-index:2;mix-blend-mode:multiply;border-radius:6px;"></div>
@@ -714,7 +714,7 @@
   <div id="launch-countdown" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2400;font-family:'Orbitron','Share Tech Mono',monospace;font-size:140px;font-weight:900;color:#00FFE0;letter-spacing:0.05em;text-shadow:0 0 40px #00FFE0,0 0 80px #00FFE044;pointer-events:none;text-align:center;line-height:1;">5</div>
 
   <!-- PROBE CAM panel — orbital around the rocket while ascending. CENTERED BIG MODAL when active -->
-  <div id="probe-cam-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1800;width:840px;height:560px;background:transparent;border:2px solid rgba(180,255,80,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 60px rgba(180,255,80,0.25),inset 0 0 60px rgba(0,0,0,0.4);">
+  <div id="probe-cam-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2050;width:1000px;height:680px;background:transparent;border:2px solid rgba(180,255,80,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 80px rgba(180,255,80,0.35),inset 0 0 80px rgba(0,0,0,0.6);">
     <div id="probe-cam-label" style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(180,255,80,0.85);letter-spacing:0.18em;cursor:grab;pointer-events:auto;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);">
       <span>▲ PROBE ORBITAL · A/D ROTATE</span>
       <button id="probe-cam-close" style="background:none;border:none;color:rgba(180,255,80,0.5);cursor:pointer;font-size:11px;padding:0;line-height:1;pointer-events:auto;">✕</button>
@@ -733,7 +733,7 @@
   </div>
 
   <!-- CAPSULE CHASE CAM — large modal, mouse-aimed crosshair (Capa 4 v2) -->
-  <div id="capsule-cam-panel" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1800;width:880px;height:560px;background:transparent;border:2px solid rgba(0,255,224,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 80px rgba(0,255,224,0.35),inset 0 0 40px rgba(0,0,0,0.4);">
+  <div id="capsule-cam-panel" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2050;width:1000px;height:680px;background:transparent;border:2px solid rgba(0,255,224,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 100px rgba(0,255,224,0.45),inset 0 0 60px rgba(0,0,0,0.5);">
     <div id="capsule-cam-label" style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:6px 12px;font-family:'Share Tech Mono',monospace;font-size:10px;color:#00FFE0;letter-spacing:0.2em;cursor:grab;pointer-events:auto;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);">
       <span style="font-weight:bold;">◉ CAPSULE TRAJECTORY · MOUSE TO STEER · FIND SAT_SLOT</span>
       <span id="capsule-distance" style="font-size:9px;color:rgba(0,255,224,0.85);font-weight:bold;">DIST: —</span>

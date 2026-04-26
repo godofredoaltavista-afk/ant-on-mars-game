@@ -221,7 +221,7 @@ const PROBE_MAX_FLIGHT_TIME = 75         // more time since ascent is slower
 let capsuleBody = null, capsuleMesh = null
 let capsuleCamera = null
 let capsuleVelocity = new THREE.Vector3()
-const CAPSULE_SPEED = 12                 // slower so mouse-aim has room to work
+const CAPSULE_SPEED = 28                 // fast enough to actually catch the orbiting satellite
 const CAPSULE_NUDGE_FORCE = 4            // legacy A/D fallback
 const CAPSULE_TIMEOUT = 22               // capsule despawns if no capture (seconds)
 const CAPSULE_MOUSE_STEER_FORCE = 26     // mouse-aim steering force (Capa 4 v2)
@@ -230,10 +230,11 @@ let _capsuleStart = 0
 // SAT_SLOT — orbital capture target (a Three.js mesh + manual point-in-sphere check)
 let satSlotMesh = null
 let satSlotPos = new THREE.Vector3()
-const SAT_SLOT_ALTITUDE_OFFSET = 170     // meters above launch site (further away)
-const SAT_SLOT_ORBITAL_RADIUS = 140      // distance from launch point on horizontal plane (further)
+const SAT_SLOT_ALTITUDE_OFFSET = 130     // meters above launch — close to eject window ceiling
+const SAT_SLOT_ORBITAL_RADIUS = 75       // horizontal distance — close enough to reach with speed 28
 const SAT_SLOT_CAPTURE_RADIUS = 14       // tighter — must aim well
 let _satSlotAngle = 0
+let _satSlotBaseY = 0   // set at capsule eject time so sat is always at capsule's altitude
 
 // Anchor flag — when true, rover is locked in place during launch prep
 let roverAnchored = false
@@ -5300,9 +5301,10 @@ function _spawnSatSlot() {
   if (satSlotMesh) { scene.remove(satSlotMesh); satSlotMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); satSlotMesh = null }
   // Position on a horizontal orbit around the launch point
   _satSlotAngle = Math.random() * Math.PI * 2
+  _satSlotBaseY = probeLaunchPos.y + SAT_SLOT_ALTITUDE_OFFSET  // temp; overridden at eject
   satSlotPos.set(
     probeLaunchPos.x + Math.cos(_satSlotAngle) * SAT_SLOT_ORBITAL_RADIUS,
-    probeLaunchPos.y + SAT_SLOT_ALTITUDE_OFFSET,
+    _satSlotBaseY,
     probeLaunchPos.z + Math.sin(_satSlotAngle) * SAT_SLOT_ORBITAL_RADIUS
   )
   satSlotMesh = new THREE.Group()
@@ -5326,10 +5328,10 @@ function _spawnSatSlot() {
 function tickSatSlot(dt) {
   if (!satSlotMesh) return
   // Slow orbit around launch point so it actually moves like a satellite
-  _satSlotAngle += dt * 0.05
+  _satSlotAngle += dt * 0.022
   satSlotPos.set(
     probeLaunchPos.x + Math.cos(_satSlotAngle) * SAT_SLOT_ORBITAL_RADIUS,
-    probeLaunchPos.y + SAT_SLOT_ALTITUDE_OFFSET,
+    _satSlotBaseY,   // set at eject time = capsule altitude, so sat is always reachable
     probeLaunchPos.z + Math.sin(_satSlotAngle) * SAT_SLOT_ORBITAL_RADIUS
   )
   satSlotMesh.position.copy(satSlotPos)
@@ -5345,16 +5347,18 @@ function ejectCapsule() {
   if (probeState !== 'eject_window' || !probeBody) return
   console.log('[CAPSULE] ejecting toward sat_slot direction')
   const probePos = probeBody.translation()
-  // Eject direction = horizontal toward SAT_SLOT (so capsule actually has a chance to reach it)
+  // Snap satellite to capsule's actual eject altitude + 18m so it's always in the same horizontal plane
+  _satSlotBaseY = probePos.y + 18
+  satSlotPos.y = _satSlotBaseY
+  if (satSlotMesh) satSlotMesh.position.y = _satSlotBaseY
+  // Eject direction = full 3D vector toward satellite (wherever it is now)
   const toSat = new THREE.Vector3(
     satSlotPos.x - probePos.x,
-    0,
+    satSlotPos.y - probePos.y,
     satSlotPos.z - probePos.z
   )
-  if (toSat.lengthSq() < 0.001) toSat.set(1, 0, 0)
-  toSat.normalize()
-  // Add a small upward component so the capsule reaches the orbital height
-  const dir = new THREE.Vector3(toSat.x, 0.45, toSat.z).normalize()
+  if (toSat.lengthSq() < 0.001) toSat.set(1, 0.3, 0)
+  const dir = toSat.normalize()
   // Build capsule body — gravityScale 0 = perfect coast
   const desc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(probePos.x + toSat.x * 1.5, probePos.y + 0.5, probePos.z + toSat.z * 1.5)
@@ -5422,8 +5426,9 @@ function tickCapsule(dt) {
   if (horiz.lengthSq() < 0.0001) horiz.set(1, 0, 0)
   const right = new THREE.Vector3(-horiz.z, 0, horiz.x).normalize()
   const up    = new THREE.Vector3(0, 1, 0)
-  const steerX = _capsuleMouseActive ? _capsuleMouseX : (keys.KeyA ? -1 : keys.KeyD ? 1 : 0)
-  const steerY = _capsuleMouseActive ? _capsuleMouseY : (keys.KeyW ? 1 : keys.KeyS ? -0.6 : 0)
+  const _mf = 0.10   // mouse gets much less steering than keyboard — micro-corrections only
+  const steerX = _capsuleMouseActive ? _capsuleMouseX * _mf : (keys.KeyA ? -1 : keys.KeyD ? 1 : 0)
+  const steerY = _capsuleMouseActive ? _capsuleMouseY * _mf : (keys.KeyW ? 1 : keys.KeyS ? -0.6 : 0)
   const f = CAPSULE_MOUSE_STEER_FORCE
   const nudge = {
     x: right.x * steerX * f + up.x * steerY * f,
@@ -5569,6 +5574,11 @@ function initProbeModule() {
   if (btnFire) btnFire.addEventListener('click', startLaunchCountdown)
   const btnEject = document.getElementById('btn-eject-capsule')
   if (btnEject) btnEject.addEventListener('click', ejectCapsule)
+  // Click ANYWHERE on probe cam panel also triggers eject when in window
+  const probePanelEl = document.getElementById('probe-cam-panel')
+  if (probePanelEl) probePanelEl.addEventListener('click', () => {
+    if (probeState === 'eject_window') ejectCapsule()
+  })
   // Patch updateDrillHUD so the launch button refreshes whenever samples change
   const _origUpdate = updateDrillHUD
   // Note: we reassign by wrapping — additive monkey-patch (NO original code removed)
@@ -5592,8 +5602,9 @@ function initProbeModule() {
       const rect = cpanel.getBoundingClientRect()
       const nx = ((e.clientX - rect.left) / rect.width)  * 2 - 1
       const ny = ((e.clientY - rect.top)  / rect.height) * 2 - 1
-      _capsuleMouseX =  THREE.MathUtils.clamp(nx * 0.12, -1, 1)  // low sensitivity — barely moves
-      _capsuleMouseY = -THREE.MathUtils.clamp(ny * 0.12, -1, 1)
+      // tanh curve: responsive near center, soft saturation at edges
+      _capsuleMouseX =  Math.tanh(nx * 2.5) * 0.60
+      _capsuleMouseY = -Math.tanh(ny * 2.5) * 0.60
       _capsuleMouseActive = true
       if (aimCursor) {
         const px = (e.clientX - rect.left)
