@@ -211,11 +211,11 @@ let probeCamera = null                   // orbital cam around the probe
 let probeOrbitAngle = 0                  // radians, controlled with A/D while flying
 let probeLaunchPos = null                // where the rocket left from (rover spawn)
 let _probeLaunchTime = 0                 // performance.now() at launch
-const PROBE_LAUNCH_IMPULSE = 22          // initial Y kick — slower take-off feels cinematic
+const PROBE_LAUNCH_IMPULSE = 6           // small initial kick — continuous thrust takes over
 const PROBE_GRAVITY_SCALE = -0.025       // gentler continuous propulsion (longer flight)
-const PROBE_EJECT_MIN_ALT = 105          // v3 — narrowed window (more challenge)
-const PROBE_EJECT_MAX_ALT = 125          // was 95–135 (40m range) → now 105–125 (20m, 50% tighter)
-const PROBE_MAX_FLIGHT_TIME = 50         // safety: capsule auto-fires if player misses
+const PROBE_EJECT_MIN_ALT = 137          // +30% higher — probe climbs slowly so takes longer
+const PROBE_EJECT_MAX_ALT = 163          // +30% window ceiling
+const PROBE_MAX_FLIGHT_TIME = 75         // more time since ascent is slower
 
 // Capsule (Capa 4)
 let capsuleBody = null, capsuleMesh = null
@@ -255,17 +255,19 @@ let _countdownCinemaActive = false
 let _cdCamAngle = 0                     // current orbit angle (radians)
 let _cdCamHeight = 80                   // starting height above rover
 let _cdCamRadius = 60                   // orbit radius
-// Rover lights (L key)
-let _lightsOn = false
-let _highBeam = false
-let _headlightMeshes = []               // 4 white rect meshes (front face of rover)
-let _headlightLights = []               // 4 SpotLights
+// Rover lights — 3 modes cycled with L: 0=position(dim), 1=low beam, 2=high beam
+let _lightMode = 0                      // 0=position, 1=low, 2=high
+let _lightsOn = true                    // lights always on (mode determines intensity)
+let _headlightMeshes = []               // 4 white rect meshes (front)
+let _headlightLights = []               // 4 SpotLights (front)
 let _tailLightMeshes = []              // 2 red rect meshes (rear)
 let _tailLightLights = []
-let _turnMeshL = null, _turnMeshR = null // orange blinkers
+let _turnMeshL = null, _turnMeshR = null // orange blinkers (independent materials)
 let _turnLightL = null, _turnLightR = null
 let _brakeMesh = null, _brakeLight = null
-let _turnBlinkT = 0                     // accumulator for blinker flash
+let _turnBlinkT = 0
+// Night mode
+let _nightMode = false
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INIT
@@ -4366,6 +4368,7 @@ function updateDrillHUD() {
   }
   const hud = document.getElementById('drill-hud')
   if (hud) {
+    hud.style.display = 'block'  // always visible
     const blink = performance.now() < _drillBlinkUntil
     hud.style.borderColor = blink ? '#FF4444' : (roverSamples.length >= MAX_SAMPLES ? '#FFB432' : 'rgba(0,255,224,0.4)')
     hud.style.boxShadow = blink
@@ -4374,6 +4377,8 @@ function updateDrillHUD() {
           ? '0 0 28px rgba(255,180,50,0.45),inset 0 0 24px rgba(255,180,50,0.08)'
           : '0 0 28px rgba(0,255,224,0.12),inset 0 0 24px rgba(0,255,224,0.04)')
   }
+  // Sync bottom-bar launch button state
+  if (typeof _refreshLaunchBtn === 'function') _refreshLaunchBtn()
 }
 
 // v2 — drill hold logic: 2.4s, chassis crouch, halo light, percent text, telemetry side panel
@@ -4564,18 +4569,19 @@ function initDrillModule() {
   initDrillModule._ran = true
 
   const btnDrill  = document.getElementById('btn-drill')
-  const panel     = document.getElementById('drill-cam-panel')   // legacy dummy (kept for ID compat)
-  const splitWrap = document.getElementById('drill-split-wrap')  // v3 split layout
+  const panel     = document.getElementById('drill-cam-panel')   // legacy dummy
+  const splitWrap = document.getElementById('drill-split-wrap')
   const hud       = document.getElementById('drill-hud')
   const closeBtn  = document.getElementById('drill-cam-close')
   const holdPrompt = document.getElementById('drill-hold-prompt')
+  // Specimens HUD always visible (not tied to drill panel)
+  if (hud) hud.style.display = 'block'
 
   function openPanel(open) {
     drillCamOpen = open
-    // v3: show the split-screen wrap; old panel stays hidden
     if (splitWrap) splitWrap.style.display = open ? 'flex' : 'none'
-    if (panel)     panel.style.display     = 'none'  // always hidden, just a DOM ID holder
-    if (hud)       hud.style.display       = open ? 'block' : 'none'
+    if (panel)     panel.style.display     = 'none'
+    // HUD stays visible always
     if (holdPrompt) holdPrompt.style.display = open ? 'block' : 'none'
     if (btnDrill) {
       btnDrill.style.background  = open ? 'rgba(0,255,224,0.18)' : 'rgba(0,0,0,0.82)'
@@ -4679,96 +4685,178 @@ function _tickCountdownCamera(dt) {
 }
 
 // ──────── ROVER LIGHTS (L key: toggle, LL: high/low beam) ────────
+const _LIGHT_MODES = ['POS', 'LOW', 'HIGH']
+const _NIGHT_SAVE = { el: 45, amb: 0.6, red: 0.8, hem: 0.7 }
+
 function initRoverLights() {
   if (initRoverLights._ran) return
   initRoverLights._ran = true
 
-  // Lights are created lazily the first time the chassis is available
+  // Spawn lights immediately (position mode, always visible)
+  _spawnRoverLights()
+
+  // L key cycles modes: position → low → high → position
   addEventListener('keydown', (e) => {
     if (e.repeat) return
     if (e.code === 'KeyL') {
-      _lightsOn = !_lightsOn
-      _spawnRoverLights()
-      showToast(_lightsOn ? 'LIGHTS ON' : 'LIGHTS OFF', '#FFB432', 900)
+      _lightMode = (_lightMode + 1) % 3
+      _updateLightModeUI()
+      showToast(`LIGHTS: ${_LIGHT_MODES[_lightMode]}`, '#FFB432', 900)
     }
   })
 
   const btn = document.getElementById('btn-rover-lights')
   if (btn) btn.addEventListener('click', () => {
-    _lightsOn = !_lightsOn
-    _spawnRoverLights()
-    btn.style.color = _lightsOn ? '#FFB432' : 'rgba(255,255,255,0.55)'
-    btn.style.borderColor = _lightsOn ? 'rgba(255,180,50,0.7)' : 'rgba(255,255,255,0.12)'
-    btn.style.background = _lightsOn ? 'rgba(255,180,50,0.14)' : 'rgba(0,0,0,0.82)'
+    _lightMode = (_lightMode + 1) % 3
+    _updateLightModeUI()
+    showToast(`LIGHTS: ${_LIGHT_MODES[_lightMode]}`, '#FFB432', 900)
   })
+
+  // Night mode button
+  const btnNight = document.getElementById('btn-night-mode')
+  if (btnNight) btnNight.addEventListener('click', () => {
+    _nightMode = !_nightMode
+    if (_nightMode) {
+      _NIGHT_SAVE.el  = lightSettings.elevation
+      _NIGHT_SAVE.amb = ambientLight.intensity
+      _NIGHT_SAVE.red = redAmbient.intensity
+      _NIGHT_SAVE.hem = shadowRedFill.intensity
+      lightSettings.elevation = -55   // sun below horizon
+      ambientLight.intensity  = 0.04
+      redAmbient.intensity    = 0.08
+      shadowRedFill.intensity = 0.04
+      btnNight.textContent = '🌑 NIGHT'
+      btnNight.style.color = '#B4FF50'
+      btnNight.style.borderColor = 'rgba(180,255,80,0.7)'
+      btnNight.style.background  = 'rgba(180,255,80,0.1)'
+    } else {
+      lightSettings.elevation = _NIGHT_SAVE.el
+      ambientLight.intensity  = _NIGHT_SAVE.amb
+      redAmbient.intensity    = _NIGHT_SAVE.red
+      shadowRedFill.intensity = _NIGHT_SAVE.hem
+      btnNight.textContent = '🌙 NIGHT'
+      btnNight.style.color = 'rgba(255,255,255,0.55)'
+      btnNight.style.borderColor = 'rgba(255,255,255,0.3)'
+      btnNight.style.background  = 'transparent'
+    }
+  })
+}
+
+function _updateLightModeUI() {
+  const btn = document.getElementById('btn-rover-lights')
+  if (!btn) return
+  const labels = ['◈ POS [L]', '◈ LOW [L]', '◈ HIGH [L]']
+  btn.textContent = labels[_lightMode]
+  btn.style.color       = _lightMode === 0 ? 'rgba(255,255,255,0.55)' : '#FFB432'
+  btn.style.borderColor = _lightMode === 2 ? 'rgba(255,255,80,0.8)' : (_lightMode === 1 ? 'rgba(255,180,50,0.7)' : 'rgba(255,255,255,0.12)')
+  btn.style.background  = _lightMode > 0 ? 'rgba(255,180,50,0.14)' : 'rgba(0,0,0,0.82)'
 }
 
 function _spawnRoverLights() {
   if (!chassisGroup) return
-  // Remove old lights & meshes
-  _headlightMeshes.forEach(m => chassisGroup.remove(m))
-  _headlightLights.forEach(l => chassisGroup.remove(l))
-  _tailLightMeshes.forEach(m => chassisGroup.remove(m))
-  _tailLightLights.forEach(l => chassisGroup.remove(l))
-  if (_turnMeshL) chassisGroup.remove(_turnMeshL)
-  if (_turnMeshR) chassisGroup.remove(_turnMeshR)
-  if (_turnLightL) chassisGroup.remove(_turnLightL)
-  if (_turnLightR) chassisGroup.remove(_turnLightR)
-  if (_brakeMesh)  chassisGroup.remove(_brakeMesh)
-  if (_brakeLight) chassisGroup.remove(_brakeLight)
+  // Cleanup old
+  ;[..._headlightMeshes, ..._headlightLights, ..._tailLightMeshes, ..._tailLightLights,
+    _turnMeshL, _turnMeshR, _turnLightL, _turnLightR, _brakeMesh, _brakeLight
+  ].forEach(o => { if (o && o.parent) o.parent.remove(o) })
   _headlightMeshes = []; _headlightLights = []
   _tailLightMeshes = []; _tailLightLights = []
   _turnMeshL = _turnMeshR = _turnLightL = _turnLightR = null
   _brakeMesh = _brakeLight = null
-  if (!_lightsOn) return
 
-  const matWhite = new THREE.MeshBasicMaterial({ color: 0xffffff })
-  const matRed   = new THREE.MeshBasicMaterial({ color: 0xff2200 })
-  const matOrange = new THREE.MeshBasicMaterial({ color: 0xff8800 })
-  const headGeo  = new THREE.BoxGeometry(0.05, 0.12, 0.28)
-  const tailGeo  = new THREE.BoxGeometry(0.05, 0.10, 0.22)
-  const turnGeo  = new THREE.BoxGeometry(0.05, 0.07, 0.14)
+  const headGeo = new THREE.BoxGeometry(0.06, 0.10, 0.20)  // smaller rect
+  const tailGeo = new THREE.BoxGeometry(0.06, 0.09, 0.18)
+  const turnGeo = new THREE.BoxGeometry(0.06, 0.07, 0.12)
 
-  // 4 front headlight positions [x fwd, y up, z side]
-  const hPos = [[1.55, 0.45, -0.55], [1.55, 0.45, 0.55], [1.55, 0.55, -0.55], [1.55, 0.55, 0.55]]
-  hPos.forEach(([x, y, z]) => {
-    const mesh = new THREE.Mesh(headGeo, matWhite); mesh.position.set(x, y, z); chassisGroup.add(mesh); _headlightMeshes.push(mesh)
-    const spot = new THREE.SpotLight(0xffffff, 6, 35, Math.PI / 8, 0.4)
-    spot.position.set(x, y, z); spot.target.position.set(x + 12, y - 1.5, z); chassisGroup.add(spot); chassisGroup.add(spot.target); _headlightLights.push(spot)
+  // LOW BEAM (2 bottom): body panel, same height as turn signals, inside them (z ±0.22)
+  // HIGH BEAM (2 top): above van body (y=0.60), aimed nearly level for far distance
+  // X moved inward to 1.12 (away from bumper tip, against body panel)
+  const lowPos  = [[1.12, 0.32, -0.22], [1.12, 0.32, 0.22]]
+  const highPos = [[1.08, 0.60, -0.20], [1.08, 0.60, 0.20]]
+  lowPos.forEach(([x, y, z]) => {
+    const mesh = new THREE.Mesh(headGeo, new THREE.MeshBasicMaterial({ color: 0x222218 }))
+    mesh.position.set(x, y, z); chassisGroup.add(mesh); _headlightMeshes.push(mesh)
+    const spot = new THREE.SpotLight(0xfffbe0, 0, 45, Math.PI / 8, 0.4)
+    spot.position.set(x, y, z)
+    spot.target.position.set(x + 16, y - 2.0, z)  // low beam: angled down for close road
+    chassisGroup.add(spot); chassisGroup.add(spot.target); _headlightLights.push(spot)
+  })
+  highPos.forEach(([x, y, z]) => {
+    const mesh = new THREE.Mesh(headGeo, new THREE.MeshBasicMaterial({ color: 0x222218 }))
+    mesh.position.set(x, y, z); chassisGroup.add(mesh); _headlightMeshes.push(mesh)
+    const spot = new THREE.SpotLight(0xffffff, 0, 180, Math.PI / 6, 0.15)
+    spot.position.set(x, y, z)
+    spot.target.position.set(x + 60, y + 1.5, z)  // high beam: nearly level, far range
+    chassisGroup.add(spot); chassisGroup.add(spot.target); _headlightLights.push(spot)
   })
 
-  // 2 rear tail lights
-  const tPos = [[-1.55, 0.45, -0.5], [-1.55, 0.45, 0.5]]
+  // 2 rear tail lights — body panel, X inward to -1.12, Z restored to ±0.28
+  const tPos = [[-1.12, 0.32, -0.28], [-1.12, 0.32, 0.28]]
   tPos.forEach(([x, y, z]) => {
-    const mesh = new THREE.Mesh(tailGeo, matRed); mesh.position.set(x, y, z); chassisGroup.add(mesh); _tailLightMeshes.push(mesh)
-    const pt = new THREE.PointLight(0xff1100, 1.5, 8); pt.position.set(x, y, z); chassisGroup.add(pt); _tailLightLights.push(pt)
+    const mesh = new THREE.Mesh(tailGeo, new THREE.MeshBasicMaterial({ color: 0xcc1100 }))
+    mesh.position.set(x, y, z); chassisGroup.add(mesh); _tailLightMeshes.push(mesh)
+    const pt = new THREE.PointLight(0xff1100, 0.8, 7)
+    pt.position.set(x, y, z); chassisGroup.add(pt); _tailLightLights.push(pt)
   })
 
-  // Turn signals (orange)
-  _turnMeshL = new THREE.Mesh(turnGeo, matOrange); _turnMeshL.position.set(1.5, 0.42, -0.72); chassisGroup.add(_turnMeshL)
-  _turnMeshR = new THREE.Mesh(turnGeo, matOrange); _turnMeshR.position.set(1.5, 0.42,  0.72); chassisGroup.add(_turnMeshR)
-  _turnLightL = new THREE.PointLight(0xff8800, 0, 6); _turnLightL.position.set(1.4, 0.4, -0.8); chassisGroup.add(_turnLightL)
-  _turnLightR = new THREE.PointLight(0xff8800, 0, 6); _turnLightR.position.set(1.4, 0.4,  0.8); chassisGroup.add(_turnLightR)
+  // Turn signals — SEPARATE materials (shared mat = both blink bug)
+  // Left = -Z side (A key), Right = +Z side (D key)
+  _turnMeshL  = new THREE.Mesh(turnGeo, new THREE.MeshBasicMaterial({ color: 0x441100 }))
+  _turnMeshR  = new THREE.Mesh(turnGeo, new THREE.MeshBasicMaterial({ color: 0x441100 }))
+  _turnMeshL.position.set(1.12, 0.32, -0.42); chassisGroup.add(_turnMeshL)
+  _turnMeshR.position.set(1.12, 0.32,  0.42); chassisGroup.add(_turnMeshR)
+  _turnLightL = new THREE.PointLight(0xff7700, 0, 5); _turnLightL.position.set(1.08, 0.3, -0.48); chassisGroup.add(_turnLightL)
+  _turnLightR = new THREE.PointLight(0xff7700, 0, 5); _turnLightR.position.set(1.08, 0.3,  0.48); chassisGroup.add(_turnLightR)
 
-  // Brake/reverse light
-  _brakeMesh  = new THREE.Mesh(tailGeo, matRed); _brakeMesh.position.set(-1.58, 0.52, 0); chassisGroup.add(_brakeMesh)
-  _brakeLight = new THREE.PointLight(0xff0000, 0, 10); _brakeLight.position.set(-1.7, 0.5, 0); chassisGroup.add(_brakeLight)
+  // Brake/reverse — own material
+  _brakeMesh  = new THREE.Mesh(tailGeo, new THREE.MeshBasicMaterial({ color: 0x330000 }))
+  _brakeMesh.position.set(-1.14, 0.40, 0); chassisGroup.add(_brakeMesh)
+  _brakeLight = new THREE.PointLight(0xff0000, 0, 9); _brakeLight.position.set(-1.18, 0.38, 0); chassisGroup.add(_brakeLight)
 }
 
 function tickRoverLights(dt) {
-  if (!_lightsOn) return
+  if (!chassisGroup) return
   _turnBlinkT += dt
-  const blink = (_turnBlinkT % 0.7) < 0.35
-  const turningLeft  = !!keys.KeyA
-  const turningRight = !!keys.KeyD
-  const braking = !!keys.KeyS
+  const blink        = (_turnBlinkT % 0.65) < 0.32
+  const turningLeft  = !!keys.KeyA   // A = left turn = left (−Z) blinker
+  const turningRight = !!keys.KeyD   // D = right turn = right (+Z) blinker
+  const braking      = !!keys.KeyS
 
-  if (_turnMeshL) _turnMeshL.material.color.setHex(turningLeft && blink ? 0xff8800 : 0x441100)
-  if (_turnMeshR) _turnMeshR.material.color.setHex(turningRight && blink ? 0xff8800 : 0x441100)
-  if (_turnLightL) _turnLightL.intensity = turningLeft && blink ? 3 : 0
-  if (_turnLightR) _turnLightR.intensity = turningRight && blink ? 3 : 0
-  if (_brakeMesh)  _brakeMesh.material.color.setHex(braking ? 0xff0000 : 0x440000)
-  if (_brakeLight) _brakeLight.intensity = braking ? 5 : 0
+  // ── HEADLIGHTS — indices 0-1 = LOW BEAM, indices 2-3 = HIGH BEAM ──
+  // mode 0 (POSITION): all off — just placed, no emission
+  // mode 1 (LOW): bottom 2 on (warm white, moderate)
+  // mode 2 (HIGH): bottom 2 on + top 2 blazing (far, level beam)
+  const lowOn  = _lightMode >= 1
+  const highOn = _lightMode === 2
+  _headlightMeshes[0].material.color.setHex(lowOn  ? 0xfffbe0 : 0x222218)
+  _headlightMeshes[1].material.color.setHex(lowOn  ? 0xfffbe0 : 0x222218)
+  _headlightMeshes[2].material.color.setHex(highOn ? 0xffffff : 0x222218)
+  _headlightMeshes[3].material.color.setHex(highOn ? 0xffffff : 0x222218)
+  _headlightLights[0].intensity = lowOn  ? 10  : 0; _headlightLights[0].distance = 45
+  _headlightLights[1].intensity = lowOn  ? 10  : 0; _headlightLights[1].distance = 45
+  _headlightLights[2].intensity = highOn ? 45  : 0; _headlightLights[2].distance = 180
+  _headlightLights[3].intensity = highOn ? 45  : 0; _headlightLights[3].distance = 180
+
+  // ── TAIL LIGHTS (side reds) ──
+  // mode 0: just placed, no emission
+  // mode 1/2: on (medium red)
+  // braking: very bright red regardless of mode
+  const tailColor     = braking ? 0xff2200 : (_lightMode === 0 ? 0x1a0000 : 0xcc1100)
+  const tailIntensity = braking ? 6 : (_lightMode === 0 ? 0 : 1.8)
+  _tailLightMeshes.forEach(m => m.material.color.setHex(tailColor))
+  _tailLightLights.forEach(l => l.intensity = tailIntensity)
+
+  // ── TURN SIGNALS ──
+  if (_turnMeshL)  _turnMeshL.material.color.setHex(turningLeft  && blink ? 0xff8800 : 0x220800)
+  if (_turnMeshR)  _turnMeshR.material.color.setHex(turningRight && blink ? 0xff8800 : 0x220800)
+  if (_turnLightL) _turnLightL.intensity = turningLeft  && blink ? 3.5 : 0
+  if (_turnLightR) _turnLightR.intensity = turningRight && blink ? 3.5 : 0
+
+  // ── BRAKE CENTER ──
+  // off in mode 0, dim red in mode 1/2, SUPER prominent when braking
+  const brakeColor = braking ? 0xff0000 : (_lightMode > 0 ? 0x550000 : 0x0e0000)
+  const brakeInt   = braking ? 12 : (_lightMode > 0 ? 0.6 : 0)
+  if (_brakeMesh)  _brakeMesh.material.color.setHex(brakeColor)
+  if (_brakeLight) _brakeLight.intensity = brakeInt
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4777,11 +4865,18 @@ function tickRoverLights(dt) {
 
 // ──────── Helpers ────────
 function _refreshLaunchBtn() {
-  const btn = document.getElementById('btn-launch-prep')
-  if (!btn) return
-  // Show only when at least 1 sample AND not already in a launch flow
-  const showable = roverSamples.length >= 1 && probeState === 'idle' && drillCamOpen
-  btn.style.display = showable ? 'block' : 'none'
+  // Bottom-bar launch button — always visible; active when samples ≥ 1 and idle
+  const btn = document.getElementById('btn-launch-specimens')
+  const active = roverSamples.length >= 1 && probeState === 'idle'
+  if (btn) {
+    btn.style.opacity = active ? '1' : '0.35'
+    btn.style.cursor  = active ? 'pointer' : 'default'
+    btn.style.color   = active ? '#FFB432' : 'rgba(255,255,255,0.35)'
+    btn.style.borderColor = active ? 'rgba(255,180,50,0.6)' : 'rgba(255,255,255,0.12)'
+  }
+  // Also update old btn-launch-prep (hidden, kept for compat)
+  const old = document.getElementById('btn-launch-prep')
+  if (old) old.style.display = 'none'
 }
 
 // ──────── LAUNCH PREP ────────
@@ -5101,6 +5196,12 @@ function tickProbe(dt) {
   if (keys.KeyD) probeOrbitAngle += dt * 1.6
   // Compute altitude relative to launch
   const altitude = p.y - probeLaunchPos.y
+  // Progressive thrust via impulse (Rapier has no applyForce — impulse = force × dt)
+  const age = (performance.now() - _probeLaunchTime) / 1000
+  const pm  = probeBody.mass()
+  const thrustY = (3.72 * 1.55 + age * 0.48) * pm   // starts just above gravity, grows with time
+  const wobble  = altitude < 22 ? (Math.random() - 0.5) * pm * 1.6 : 0  // wobbly first 22m
+  probeBody.applyImpulse({ x: wobble * dt, y: thrustY * dt, z: wobble * 0.7 * dt }, true)
   // Update altitude marker on the bar
   const wrap = document.getElementById('probe-altitude-wrap')
   const marker = document.getElementById('probe-alt-marker')
@@ -5458,6 +5559,10 @@ function initProbeModule() {
   initProbeModule._ran = true
   const btnPrep = document.getElementById('btn-launch-prep')
   if (btnPrep) btnPrep.addEventListener('click', startLaunchPrep)
+  // v3 — bottom-bar launch button (always visible)
+  const btnSpecLaunch = document.getElementById('btn-launch-specimens')
+  if (btnSpecLaunch) btnSpecLaunch.addEventListener('click', () => { if (roverSamples.length >= 1 && probeState === 'idle') startLaunchPrep() })
+  _refreshLaunchBtn()
   const btnCancel = document.getElementById('btn-launch-cancel')
   if (btnCancel) btnCancel.addEventListener('click', cancelLaunchPrep)
   const btnFire = document.getElementById('btn-launch-fire')
@@ -5487,8 +5592,8 @@ function initProbeModule() {
       const rect = cpanel.getBoundingClientRect()
       const nx = ((e.clientX - rect.left) / rect.width)  * 2 - 1
       const ny = ((e.clientY - rect.top)  / rect.height) * 2 - 1
-      _capsuleMouseX =  THREE.MathUtils.clamp(nx, -1, 1)
-      _capsuleMouseY = -THREE.MathUtils.clamp(ny, -1, 1) // invert: up = positive
+      _capsuleMouseX =  THREE.MathUtils.clamp(nx * 0.12, -1, 1)  // low sensitivity — barely moves
+      _capsuleMouseY = -THREE.MathUtils.clamp(ny * 0.12, -1, 1)
       _capsuleMouseActive = true
       if (aimCursor) {
         const px = (e.clientX - rect.left)

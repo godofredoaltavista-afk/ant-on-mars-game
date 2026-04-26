@@ -463,8 +463,9 @@
     </button>
   </div>
   
-  <div id="btn-sun-wrapper" style="position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);z-index:2100;cursor:grab;user-select:none;pointer-events:auto;">
+  <div id="btn-sun-wrapper" style="position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);z-index:2100;cursor:grab;user-select:none;pointer-events:auto;display:flex;gap:6px;align-items:center;">
     <button id="btn-sun-anim" title="Toggle sun animation" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:7px 18px;background:transparent;color:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.3);border-radius:4px;cursor:pointer;transition:all 0.2s ease;backdrop-filter:blur(12px);user-select:none;pointer-events:auto;white-space:nowrap;">☀ SUN</button>
+    <button id="btn-night-mode" title="Toggle night mode" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:7px 14px;background:transparent;color:rgba(180,160,255,0.55);border:1px solid rgba(180,160,255,0.3);border-radius:4px;cursor:pointer;transition:all 0.2s ease;backdrop-filter:blur(12px);user-select:none;pointer-events:auto;white-space:nowrap;">🌙 NIGHT</button>
   </div>
   
   <div id="btn-gravity-wrapper" style="position:fixed;top:50%;left:calc(50% + 220px);transform:translate(-50%, -50%);z-index:2100;cursor:grab;user-select:none;pointer-events:auto;">
@@ -478,9 +479,10 @@
   <!-- FreeTeleport: spawn preview marker (arrow + ghost van outline) -->
   <div id="freetp-hint" style="display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:2200;font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(255,210,0,0.85);letter-spacing:0.18em;pointer-events:none;text-align:center;text-shadow:0 0 12px rgba(255,210,0,0.5);">CLICK TERRAIN TO SPAWN HERE · ESC TO CANCEL</div>
 
-  <!-- Bottom control buttons: DRIVE MARS and CONSTRUCT -->
+  <!-- Bottom control buttons: DRIVE MARS, CONSTRUCT, LAUNCH SPECIMENS -->
   <button id="drive-toggle" style="position:fixed;bottom:28px;left:calc(50% - 165px);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:rgba(0,170,255,0.08);color:#00AAFF;border:1px solid rgba(0,170,255,0.4);border-radius:4px;cursor:default;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);">▶ DRIVE MARS</button>
   <button id="construct-toggle" style="position:fixed;bottom:28px;left:calc(50% + 165px);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:transparent;color:#b8ff4a;border:1px solid rgba(184,255,74,0.5);border-radius:4px;cursor:pointer;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);">⚙ CONSTRUCT</button>
+  <button id="btn-launch-specimens" style="position:fixed;bottom:28px;right:16px;z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:rgba(255,180,50,0.08);color:rgba(255,255,255,0.35);border:1px solid rgba(255,180,50,0.25);border-radius:4px;cursor:pointer;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);opacity:0.35;">⇪ LAUNCH</button>
 
   <!-- Hook Crosshair -->
   <div id="hook-crosshair" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:24px;height:24px;border:1.5px solid #FF4444;border-radius:50%;pointer-events:none;z-index:1300;"></div>
@@ -542,71 +544,79 @@
     <button style="font-family:'Orbitron','Share Tech Mono',monospace;font-size:11px;letter-spacing:0.22em;padding:9px 22px;background:rgba(0,0,0,0.55);color:rgba(0,255,224,0.85);border:1px solid rgba(0,255,224,0.5);border-radius:4px;cursor:default;backdrop-filter:blur(8px);animation:drillHoldPulse 2s ease infinite;pointer-events:none;">HOLD [E] TO DRILL</button>
   </div>
 
-  <!-- TORNO SPLIT LAYOUT — full screen: FLOOR (left, B&W fisheye) | FRONT (right, color) -->
-  <div id="drill-split-wrap" style="display:none;position:fixed;inset:0;z-index:1200;flex-direction:row;pointer-events:none;">
-    <!-- LEFT HALF — FLOOR cam: fisheye, B&W underbelly -->
-    <div id="drill-floor-panel" style="position:absolute;left:0;top:0;bottom:0;width:50%;pointer-events:auto;overflow:hidden;border-right:1px solid rgba(0,255,224,0.2);">
-      <!-- Strong B&W + fisheye barrel vignette -->
-      <div style="position:absolute;inset:0;backdrop-filter:grayscale(1) contrast(1.5) brightness(0.85);-webkit-backdrop-filter:grayscale(1) contrast(1.5) brightness(0.85);pointer-events:none;z-index:1;"></div>
-      <!-- Barrel/fisheye dark vignette (heavy at edges) -->
-      <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 18%,rgba(0,0,0,0.5) 55%,rgba(0,0,0,0.88) 100%);pointer-events:none;z-index:2;"></div>
-      <!-- Dense scanlines (more CRT) -->
-      <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(255,255,255,0.06) 0px,rgba(255,255,255,0.06) 1px,transparent 1px,transparent 2px);pointer-events:none;z-index:2;mix-blend-mode:overlay;"></div>
-      <!-- Header bar -->
-      <div style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.7);letter-spacing:0.2em;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);">
+  <!-- TORNO SPLIT LAYOUT — casi full screen (8px margin), bottom 56px free for bottom bar -->
+  <div id="drill-split-wrap" style="display:none;position:fixed;top:0;left:0;right:0;bottom:56px;z-index:1200;flex-direction:row;gap:6px;padding:6px;pointer-events:none;box-sizing:border-box;">
+
+    <!-- LEFT — FLOOR cam (B&W fisheye, independently resizable) -->
+    <div id="drill-floor-panel" style="flex:1;min-width:300px;pointer-events:auto;overflow:hidden;border:1px solid rgba(255,255,255,0.35);border-radius:6px;position:relative;background:transparent;">
+      <!-- VERY strong B&W fisheye overlay -->
+      <div style="position:absolute;inset:0;backdrop-filter:grayscale(1) contrast(1.7) brightness(0.8);-webkit-backdrop-filter:grayscale(1) contrast(1.7) brightness(0.8);pointer-events:none;z-index:1;border-radius:6px;"></div>
+      <!-- Barrel vignette (heavy) -->
+      <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 15%,rgba(0,0,0,0.55) 55%,rgba(0,0,0,0.90) 100%);pointer-events:none;z-index:2;border-radius:6px;"></div>
+      <!-- INTENSE scanlines — every 2px, higher opacity -->
+      <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(255,255,255,0.11) 0px,rgba(255,255,255,0.11) 1px,transparent 1px,transparent 2px);pointer-events:none;z-index:2;mix-blend-mode:overlay;border-radius:6px;"></div>
+      <!-- Horizontal stripe emphasis every 8px (double-line CRT) -->
+      <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,transparent 0px,transparent 6px,rgba(0,0,0,0.25) 6px,rgba(0,0,0,0.25) 8px);pointer-events:none;z-index:2;mix-blend-mode:multiply;border-radius:6px;"></div>
+      <!-- Header -->
+      <div style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.75);letter-spacing:0.2em;background:rgba(0,0,0,0.72);backdrop-filter:blur(4px);border-radius:6px 6px 0 0;">
         <span>⊙ FLOOR · FISHEYE 170°</span>
-        <span id="drill-floor-tel" style="color:rgba(0,255,224,0.7);font-size:7px;">BIO: —</span>
+        <span id="drill-floor-tel" style="color:rgba(0,255,224,0.8);font-size:7px;">BIO: —</span>
       </div>
-      <!-- Telemetry side -->
-      <div style="position:absolute;left:8px;top:32px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.6);letter-spacing:0.1em;z-index:3;line-height:1.7;">
+      <!-- Telemetry -->
+      <div style="position:absolute;left:8px;top:32px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.65);letter-spacing:0.1em;z-index:3;line-height:1.8;">
         <div>SUB: FLOOR</div>
         <div>DPT: <span id="drill-floor-depth">0.00m</span></div>
       </div>
-      <!-- Corner frame decoration -->
-      <div style="position:absolute;top:24px;left:0;right:0;bottom:0;pointer-events:none;z-index:3;">
-        <div style="position:absolute;top:8px;left:8px;width:22px;height:22px;border-left:1px solid rgba(255,255,255,0.45);border-top:1px solid rgba(255,255,255,0.45);"></div>
-        <div style="position:absolute;top:8px;right:8px;width:22px;height:22px;border-right:1px solid rgba(255,255,255,0.45);border-top:1px solid rgba(255,255,255,0.45);"></div>
-        <div style="position:absolute;bottom:8px;left:8px;width:22px;height:22px;border-left:1px solid rgba(255,255,255,0.45);border-bottom:1px solid rgba(255,255,255,0.45);"></div>
-        <div style="position:absolute;bottom:8px;right:8px;width:22px;height:22px;border-right:1px solid rgba(255,255,255,0.45);border-bottom:1px solid rgba(255,255,255,0.45);"></div>
+      <!-- Corner frames -->
+      <div style="position:absolute;top:26px;left:0;right:0;bottom:0;pointer-events:none;z-index:3;">
+        <div style="position:absolute;top:8px;left:8px;width:24px;height:24px;border-left:1.5px solid rgba(255,255,255,0.55);border-top:1.5px solid rgba(255,255,255,0.55);"></div>
+        <div style="position:absolute;top:8px;right:8px;width:24px;height:24px;border-right:1.5px solid rgba(255,255,255,0.55);border-top:1.5px solid rgba(255,255,255,0.55);"></div>
+        <div style="position:absolute;bottom:8px;left:8px;width:24px;height:24px;border-left:1.5px solid rgba(255,255,255,0.55);border-bottom:1.5px solid rgba(255,255,255,0.55);"></div>
+        <div style="position:absolute;bottom:8px;right:8px;width:24px;height:24px;border-right:1.5px solid rgba(255,255,255,0.55);border-bottom:1.5px solid rgba(255,255,255,0.55);"></div>
       </div>
-      <!-- BIG digital % (shown while drilling) -->
-      <div id="drill-floor-pct" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;font-family:'Orbitron','Share Tech Mono',monospace;font-size:80px;font-weight:900;color:#00FFE0;letter-spacing:0.02em;text-shadow:0 0 40px rgba(0,255,224,0.9),0 0 80px rgba(0,255,224,0.4);pointer-events:none;text-align:center;">0%</div>
+      <!-- HOLD [E] centered on this panel -->
+      <div id="drill-hold-prompt" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;pointer-events:none;">
+        <div style="font-family:'Orbitron','Share Tech Mono',monospace;font-size:10px;letter-spacing:0.2em;padding:8px 20px;background:rgba(0,0,0,0.5);color:rgba(0,255,224,0.9);border:1px solid rgba(0,255,224,0.5);border-radius:4px;animation:drillHoldPulse 2s ease infinite;text-align:center;">HOLD [E] TO DRILL</div>
+      </div>
+      <!-- BIG digital % -->
+      <div id="drill-floor-pct" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;font-family:'Orbitron','Share Tech Mono',monospace;font-size:78px;font-weight:900;color:#00FFE0;text-shadow:0 0 40px rgba(0,255,224,0.9),0 0 80px rgba(0,255,224,0.4);pointer-events:none;text-align:center;">0%</div>
     </div>
 
-    <!-- RIGHT HALF — FRONT cam: color, 130° FOV over the hood -->
-    <div id="drill-front-panel" style="position:absolute;right:0;top:0;bottom:0;width:50%;pointer-events:auto;overflow:hidden;">
-      <!-- Light scanlines only -->
-      <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(255,255,255,0.025) 0px,rgba(255,255,255,0.025) 1px,transparent 1px,transparent 3px);pointer-events:none;z-index:2;mix-blend-mode:overlay;"></div>
+    <!-- RIGHT — FRONT cam (color 130°, independently resizable) -->
+    <div id="drill-front-panel" style="flex:1;min-width:300px;pointer-events:auto;overflow:hidden;border:1px solid rgba(0,255,224,0.4);border-radius:6px;position:relative;background:transparent;">
+      <!-- Intense scanlines (same weight as floor) -->
+      <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(255,255,255,0.09) 0px,rgba(255,255,255,0.09) 1px,transparent 1px,transparent 2px);pointer-events:none;z-index:2;mix-blend-mode:overlay;border-radius:6px;"></div>
+      <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,transparent 0px,transparent 6px,rgba(0,0,0,0.18) 6px,rgba(0,0,0,0.18) 8px);pointer-events:none;z-index:2;mix-blend-mode:multiply;border-radius:6px;"></div>
       <!-- Soft vignette -->
-      <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,0.45) 100%);pointer-events:none;z-index:2;"></div>
-      <!-- Header with status + close -->
-      <div style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.7);letter-spacing:0.2em;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);">
+      <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 42%,rgba(0,0,0,0.5) 100%);pointer-events:none;z-index:2;border-radius:6px;"></div>
+      <!-- Header + close -->
+      <div style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.75);letter-spacing:0.2em;background:rgba(0,0,0,0.68);backdrop-filter:blur(4px);border-radius:6px 6px 0 0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span>◉ FRONT · 130°</span>
-          <span id="drill-cam-status" style="font-size:7px;color:rgba(0,255,224,0.6);">IDLE</span>
+          <span id="drill-cam-status" style="font-size:7px;color:rgba(0,255,224,0.7);">IDLE</span>
         </div>
-        <button id="drill-front-close" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:13px;padding:0;line-height:1;pointer-events:auto;">✕</button>
+        <button id="drill-front-close" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:13px;padding:0;line-height:1;pointer-events:auto;">✕</button>
       </div>
-      <!-- Telemetry (these IDs are referenced by JS) -->
-      <div style="position:absolute;left:8px;top:32px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.7);letter-spacing:0.12em;z-index:3;background:rgba(0,0,0,0.4);padding:4px 8px;border-left:2px solid rgba(0,255,224,0.6);line-height:1.7;">
+      <!-- Telemetry (JS IDs here) -->
+      <div style="position:absolute;left:8px;top:32px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.75);letter-spacing:0.12em;z-index:3;background:rgba(0,0,0,0.42);padding:4px 8px;border-left:2px solid rgba(0,255,224,0.65);line-height:1.8;">
         <div>SUB: <span id="drill-tel-sub">FRONT</span></div>
         <div>DPT: <span id="drill-tel-depth">0.0m</span></div>
         <div>BIO: <span id="drill-tel-biome">—</span></div>
       </div>
-      <!-- Drill reticle + ring + small pct -->
-      <div id="drill-reticle" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:84px;height:84px;border:1px dashed rgba(255,255,255,0.5);border-radius:50%;pointer-events:none;z-index:3;">
-        <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.35);transform:translateX(-50%);"></div>
-        <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(255,255,255,0.35);transform:translateY(-50%);"></div>
+      <!-- Reticle + ring -->
+      <div id="drill-reticle" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:84px;height:84px;border:1px dashed rgba(255,255,255,0.55);border-radius:50%;pointer-events:none;z-index:3;">
+        <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.4);transform:translateX(-50%);"></div>
+        <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(255,255,255,0.4);transform:translateY(-50%);"></div>
         <div id="drill-progress-ring" style="position:absolute;inset:-8px;border-radius:50%;border:3px solid transparent;border-top-color:#00FFE0;transform:rotate(0deg);transition:transform 0.05s linear;display:none;"></div>
       </div>
-      <!-- Big % on FRONT cam too (below reticle) -->
-      <div id="drill-progress-pct" style="display:none;position:absolute;left:50%;top:calc(50% + 58px);transform:translateX(-50%);font-family:'Orbitron','Share Tech Mono',monospace;font-size:52px;font-weight:900;color:#00FFE0;letter-spacing:0.02em;text-shadow:0 0 30px rgba(0,255,224,0.9);z-index:4;pointer-events:none;text-align:center;">0%</div>
-      <!-- Corner frame -->
-      <div style="position:absolute;top:24px;left:0;right:0;bottom:0;pointer-events:none;z-index:3;">
-        <div style="position:absolute;top:8px;left:8px;width:22px;height:22px;border-left:1px solid rgba(0,255,224,0.45);border-top:1px solid rgba(0,255,224,0.45);"></div>
-        <div style="position:absolute;top:8px;right:8px;width:22px;height:22px;border-right:1px solid rgba(0,255,224,0.45);border-top:1px solid rgba(0,255,224,0.45);"></div>
-        <div style="position:absolute;bottom:8px;left:8px;width:22px;height:22px;border-left:1px solid rgba(0,255,224,0.45);border-bottom:1px solid rgba(0,255,224,0.45);"></div>
-        <div style="position:absolute;bottom:8px;right:8px;width:22px;height:22px;border-right:1px solid rgba(0,255,224,0.45);border-bottom:1px solid rgba(0,255,224,0.45);"></div>
+      <!-- Big % FRONT -->
+      <div id="drill-progress-pct" style="display:none;position:absolute;left:50%;top:calc(50% + 58px);transform:translateX(-50%);font-family:'Orbitron','Share Tech Mono',monospace;font-size:50px;font-weight:900;color:#00FFE0;text-shadow:0 0 30px rgba(0,255,224,0.9);z-index:4;pointer-events:none;text-align:center;">0%</div>
+      <!-- Corner frames cyan -->
+      <div style="position:absolute;top:26px;left:0;right:0;bottom:0;pointer-events:none;z-index:3;">
+        <div style="position:absolute;top:8px;left:8px;width:24px;height:24px;border-left:1.5px solid rgba(0,255,224,0.55);border-top:1.5px solid rgba(0,255,224,0.55);"></div>
+        <div style="position:absolute;top:8px;right:8px;width:24px;height:24px;border-right:1.5px solid rgba(0,255,224,0.55);border-top:1.5px solid rgba(0,255,224,0.55);"></div>
+        <div style="position:absolute;bottom:8px;left:8px;width:24px;height:24px;border-left:1.5px solid rgba(0,255,224,0.55);border-bottom:1.5px solid rgba(0,255,224,0.55);"></div>
+        <div style="position:absolute;bottom:8px;right:8px;width:24px;height:24px;border-right:1.5px solid rgba(0,255,224,0.55);border-bottom:1.5px solid rgba(0,255,224,0.55);"></div>
       </div>
     </div>
   </div>
@@ -624,7 +634,7 @@
   </div>
 
   <!-- DRILL SAMPLES HUD — glass test-tube look, draggable, NO backdrop-filter so colors stay real -->
-  <div id="drill-hud" style="display:none;position:fixed;bottom:96px;right:16px;z-index:1100;font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(255,255,255,0.85);background:linear-gradient(180deg,rgba(8,12,18,0.95),rgba(0,0,0,0.92));border:1px solid rgba(0,255,224,0.4);border-radius:8px;padding:12px 16px;pointer-events:auto;user-select:none;cursor:grab;letter-spacing:0.14em;box-shadow:0 0 28px rgba(0,255,224,0.12),inset 0 0 24px rgba(0,255,224,0.04);">
+  <div id="drill-hud" style="display:none;position:fixed;bottom:96px;right:16px;z-index:1350;font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(255,255,255,0.85);background:linear-gradient(180deg,rgba(8,12,18,0.95),rgba(0,0,0,0.92));border:1px solid rgba(0,255,224,0.4);border-radius:8px;padding:12px 16px;pointer-events:auto;user-select:none;cursor:grab;letter-spacing:0.14em;box-shadow:0 0 28px rgba(0,255,224,0.12),inset 0 0 24px rgba(0,255,224,0.04);">
     <div id="drill-hud-header" style="display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:10px;font-size:9px;color:rgba(0,255,224,0.85);text-transform:uppercase;">
       <span style="font-weight:bold;">⊜ SPECIMENS</span>
       <span id="drill-hud-counter" style="color:#FFFFFF;font-weight:bold;letter-spacing:0.18em;">0 / 7</span>
