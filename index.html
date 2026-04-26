@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ANT ON MARS</title>
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Bebas+Neue&family=Syne:wght@800&family=Instrument+Serif&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Bebas+Neue&family=Syne:wght@800&family=Instrument+Serif&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@700;900&display=swap" rel="stylesheet"/>
 
 </head>
 <body>
@@ -531,45 +531,96 @@
        Hold [E]: drill into terrain & collect biome sample
   ════════════════════════════════════════════════════════════════════════ -->
 
-  <!-- TORNO toggle button — top-right, below MAP/RIGHT button stack -->
+  <!-- TORNO toggle button — top-right -->
   <button id="btn-drill" title="TORNO [T] — interior cam + sampling" style="position:fixed;top:104px;right:16px;z-index:1102;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:7px 14px;background:rgba(0,0,0,0.82);color:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.12);border-radius:4px;cursor:pointer;backdrop-filter:blur(12px);transition:all 0.2s ease;">⛏ TORNO [T]</button>
 
-  <!-- TORNO panel — interior POV with FLOOR / FRONT cam toggle, B/N via backdrop-filter -->
-  <div id="drill-cam-panel" style="display:none;position:fixed;top:148px;right:16px;z-index:1101;width:420px;height:280px;background:transparent;border:1px solid rgba(255,255,255,0.6);border-radius:6px;overflow:hidden;pointer-events:auto;user-select:none;">
-    <!-- B/N + scanline overlay over the scissor-rendered area (camera-only, NOT samples) -->
-    <div id="drill-cam-bw-overlay" style="position:absolute;inset:0;backdrop-filter:grayscale(1) contrast(1.3) brightness(0.95);-webkit-backdrop-filter:grayscale(1) contrast(1.3) brightness(0.95);pointer-events:none;z-index:1;"></div>
-    <div id="drill-cam-scanlines" style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(255,255,255,0.05) 0px,rgba(255,255,255,0.05) 1px,transparent 1px,transparent 3px);pointer-events:none;z-index:2;mix-blend-mode:overlay;"></div>
-    <!-- Vignette -->
-    <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 35%,rgba(0,0,0,0.55) 100%);pointer-events:none;z-index:2;"></div>
-    <!-- Crosshair / drill reticle -->
-    <div id="drill-reticle" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:84px;height:84px;border:1px dashed rgba(255,255,255,0.55);border-radius:50%;pointer-events:none;z-index:3;display:flex;align-items:center;justify-content:center;">
-      <div style="position:absolute;left:50%;top:50%;width:1px;height:160%;background:rgba(255,255,255,0.4);transform:translate(-50%,-50%);"></div>
-      <div style="position:absolute;left:50%;top:50%;width:160%;height:1px;background:rgba(255,255,255,0.4);transform:translate(-50%,-50%);"></div>
-      <div id="drill-progress-ring" style="position:absolute;inset:-8px;border-radius:50%;border:3px solid transparent;border-top-color:#00FFE0;transform:rotate(0deg);transition:transform 0.05s linear;display:none;"></div>
-      <div id="drill-progress-pct" style="position:absolute;left:50%;top:120%;transform:translate(-50%,0);font-family:'Share Tech Mono',monospace;font-size:9px;color:#00FFE0;letter-spacing:0.15em;display:none;text-shadow:0 0 6px rgba(0,255,224,0.8);">0%</div>
+  <!-- LIGHTS button — next to TORNO -->
+  <button id="btn-rover-lights" title="Rover lights [L]" style="position:fixed;top:104px;right:116px;z-index:1102;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:7px 14px;background:rgba(0,0,0,0.82);color:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.12);border-radius:4px;cursor:pointer;backdrop-filter:blur(12px);transition:all 0.2s ease;">◈ LIGHTS [L]</button>
+
+  <!-- HOLD [E] floating prompt — shown when TORNO is open but not drilling -->
+  <div id="drill-hold-prompt" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1250;pointer-events:none;">
+    <button style="font-family:'Orbitron','Share Tech Mono',monospace;font-size:11px;letter-spacing:0.22em;padding:9px 22px;background:rgba(0,0,0,0.55);color:rgba(0,255,224,0.85);border:1px solid rgba(0,255,224,0.5);border-radius:4px;cursor:default;backdrop-filter:blur(8px);animation:drillHoldPulse 2s ease infinite;pointer-events:none;">HOLD [E] TO DRILL</button>
+  </div>
+
+  <!-- TORNO SPLIT LAYOUT — full screen: FLOOR (left, B&W fisheye) | FRONT (right, color) -->
+  <div id="drill-split-wrap" style="display:none;position:fixed;inset:0;z-index:1200;flex-direction:row;pointer-events:none;">
+    <!-- LEFT HALF — FLOOR cam: fisheye, B&W underbelly -->
+    <div id="drill-floor-panel" style="position:absolute;left:0;top:0;bottom:0;width:50%;pointer-events:auto;overflow:hidden;border-right:1px solid rgba(0,255,224,0.2);">
+      <!-- Strong B&W + fisheye barrel vignette -->
+      <div style="position:absolute;inset:0;backdrop-filter:grayscale(1) contrast(1.5) brightness(0.85);-webkit-backdrop-filter:grayscale(1) contrast(1.5) brightness(0.85);pointer-events:none;z-index:1;"></div>
+      <!-- Barrel/fisheye dark vignette (heavy at edges) -->
+      <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 18%,rgba(0,0,0,0.5) 55%,rgba(0,0,0,0.88) 100%);pointer-events:none;z-index:2;"></div>
+      <!-- Dense scanlines (more CRT) -->
+      <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(255,255,255,0.06) 0px,rgba(255,255,255,0.06) 1px,transparent 1px,transparent 2px);pointer-events:none;z-index:2;mix-blend-mode:overlay;"></div>
+      <!-- Header bar -->
+      <div style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.7);letter-spacing:0.2em;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);">
+        <span>⊙ FLOOR · FISHEYE 170°</span>
+        <span id="drill-floor-tel" style="color:rgba(0,255,224,0.7);font-size:7px;">BIO: —</span>
+      </div>
+      <!-- Telemetry side -->
+      <div style="position:absolute;left:8px;top:32px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.6);letter-spacing:0.1em;z-index:3;line-height:1.7;">
+        <div>SUB: FLOOR</div>
+        <div>DPT: <span id="drill-floor-depth">0.00m</span></div>
+      </div>
+      <!-- Corner frame decoration -->
+      <div style="position:absolute;top:24px;left:0;right:0;bottom:0;pointer-events:none;z-index:3;">
+        <div style="position:absolute;top:8px;left:8px;width:22px;height:22px;border-left:1px solid rgba(255,255,255,0.45);border-top:1px solid rgba(255,255,255,0.45);"></div>
+        <div style="position:absolute;top:8px;right:8px;width:22px;height:22px;border-right:1px solid rgba(255,255,255,0.45);border-top:1px solid rgba(255,255,255,0.45);"></div>
+        <div style="position:absolute;bottom:8px;left:8px;width:22px;height:22px;border-left:1px solid rgba(255,255,255,0.45);border-bottom:1px solid rgba(255,255,255,0.45);"></div>
+        <div style="position:absolute;bottom:8px;right:8px;width:22px;height:22px;border-right:1px solid rgba(255,255,255,0.45);border-bottom:1px solid rgba(255,255,255,0.45);"></div>
+      </div>
+      <!-- BIG digital % (shown while drilling) -->
+      <div id="drill-floor-pct" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;font-family:'Orbitron','Share Tech Mono',monospace;font-size:80px;font-weight:900;color:#00FFE0;letter-spacing:0.02em;text-shadow:0 0 40px rgba(0,255,224,0.9),0 0 80px rgba(0,255,224,0.4);pointer-events:none;text-align:center;">0%</div>
     </div>
-    <!-- Telemetry overlay (corner readouts) -->
-    <div id="drill-cam-telemetry" style="position:absolute;left:8px;top:32px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.7);letter-spacing:0.12em;z-index:3;background:rgba(0,0,0,0.4);padding:4px 8px;border-left:2px solid rgba(0,255,224,0.6);line-height:1.7;">
-      <div>SUB: <span id="drill-tel-sub">FLOOR</span></div>
-      <div>DPT: <span id="drill-tel-depth">0.0m</span></div>
-      <div>BIO: <span id="drill-tel-biome">—</span></div>
-    </div>
-    <!-- Header with FLOOR / FRONT toggle -->
-    <div id="drill-cam-label" style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(255,255,255,0.85);letter-spacing:0.18em;cursor:grab;pointer-events:auto;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span style="font-weight:bold;">⛏ TORNO</span>
-        <div style="display:flex;gap:0;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.2);border-radius:3px;overflow:hidden;">
-          <button id="drill-cam-floor" data-mode="floor" class="drill-cam-tab active" style="background:rgba(0,255,224,0.18);border:none;color:#00FFE0;font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.15em;padding:3px 9px;cursor:pointer;border-right:1px solid rgba(255,255,255,0.15);">FLOOR</button>
-          <button id="drill-cam-front" data-mode="front" class="drill-cam-tab" style="background:transparent;border:none;color:rgba(255,255,255,0.55);font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.15em;padding:3px 9px;cursor:pointer;">FRONT 🎣</button>
+
+    <!-- RIGHT HALF — FRONT cam: color, 130° FOV over the hood -->
+    <div id="drill-front-panel" style="position:absolute;right:0;top:0;bottom:0;width:50%;pointer-events:auto;overflow:hidden;">
+      <!-- Light scanlines only -->
+      <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(255,255,255,0.025) 0px,rgba(255,255,255,0.025) 1px,transparent 1px,transparent 3px);pointer-events:none;z-index:2;mix-blend-mode:overlay;"></div>
+      <!-- Soft vignette -->
+      <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,0.45) 100%);pointer-events:none;z-index:2;"></div>
+      <!-- Header with status + close -->
+      <div style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.7);letter-spacing:0.2em;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span>◉ FRONT · 130°</span>
+          <span id="drill-cam-status" style="font-size:7px;color:rgba(0,255,224,0.6);">IDLE</span>
         </div>
+        <button id="drill-front-close" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:13px;padding:0;line-height:1;pointer-events:auto;">✕</button>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;pointer-events:auto;">
-        <span id="drill-cam-status" style="font-size:8px;color:rgba(255,255,255,0.5);letter-spacing:0.12em;">IDLE</span>
-        <button id="drill-cam-close" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:13px;padding:0;line-height:1;pointer-events:auto;">✕</button>
+      <!-- Telemetry (these IDs are referenced by JS) -->
+      <div style="position:absolute;left:8px;top:32px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,255,255,0.7);letter-spacing:0.12em;z-index:3;background:rgba(0,0,0,0.4);padding:4px 8px;border-left:2px solid rgba(0,255,224,0.6);line-height:1.7;">
+        <div>SUB: <span id="drill-tel-sub">FRONT</span></div>
+        <div>DPT: <span id="drill-tel-depth">0.0m</span></div>
+        <div>BIO: <span id="drill-tel-biome">—</span></div>
+      </div>
+      <!-- Drill reticle + ring + small pct -->
+      <div id="drill-reticle" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:84px;height:84px;border:1px dashed rgba(255,255,255,0.5);border-radius:50%;pointer-events:none;z-index:3;">
+        <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.35);transform:translateX(-50%);"></div>
+        <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(255,255,255,0.35);transform:translateY(-50%);"></div>
+        <div id="drill-progress-ring" style="position:absolute;inset:-8px;border-radius:50%;border:3px solid transparent;border-top-color:#00FFE0;transform:rotate(0deg);transition:transform 0.05s linear;display:none;"></div>
+      </div>
+      <!-- Big % on FRONT cam too (below reticle) -->
+      <div id="drill-progress-pct" style="display:none;position:absolute;left:50%;top:calc(50% + 58px);transform:translateX(-50%);font-family:'Orbitron','Share Tech Mono',monospace;font-size:52px;font-weight:900;color:#00FFE0;letter-spacing:0.02em;text-shadow:0 0 30px rgba(0,255,224,0.9);z-index:4;pointer-events:none;text-align:center;">0%</div>
+      <!-- Corner frame -->
+      <div style="position:absolute;top:24px;left:0;right:0;bottom:0;pointer-events:none;z-index:3;">
+        <div style="position:absolute;top:8px;left:8px;width:22px;height:22px;border-left:1px solid rgba(0,255,224,0.45);border-top:1px solid rgba(0,255,224,0.45);"></div>
+        <div style="position:absolute;top:8px;right:8px;width:22px;height:22px;border-right:1px solid rgba(0,255,224,0.45);border-top:1px solid rgba(0,255,224,0.45);"></div>
+        <div style="position:absolute;bottom:8px;left:8px;width:22px;height:22px;border-left:1px solid rgba(0,255,224,0.45);border-bottom:1px solid rgba(0,255,224,0.45);"></div>
+        <div style="position:absolute;bottom:8px;right:8px;width:22px;height:22px;border-right:1px solid rgba(0,255,224,0.45);border-bottom:1px solid rgba(0,255,224,0.45);"></div>
       </div>
     </div>
-    <!-- Resize handle bottom-right -->
-    <div id="drill-cam-resize-handle" style="position:absolute;bottom:0;right:0;width:16px;height:16px;cursor:nwse-resize;pointer-events:auto;z-index:5;background:linear-gradient(135deg,transparent 50%,rgba(255,255,255,0.4) 50%);"></div>
+  </div>
+
+  <!-- Legacy dummy panel (IDs kept for JS compat; never visible) -->
+  <div id="drill-cam-panel" style="display:none;position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;">
+    <button id="drill-cam-floor" style="display:none;"></button>
+    <button id="drill-cam-front" style="display:none;"></button>
+    <button id="drill-cam-close" style="display:none;"></button>
+    <div id="drill-cam-resize-handle" style="display:none;"></div>
+    <div id="drill-cam-label" style="display:none;"></div>
+    <div id="drill-cam-telemetry" style="display:none;"></div>
+    <div id="drill-cam-bw-overlay" style="display:none;"></div>
+    <div id="drill-cam-scanlines" style="display:none;"></div>
   </div>
 
   <!-- DRILL SAMPLES HUD — glass test-tube look, draggable, NO backdrop-filter so colors stay real -->
@@ -605,53 +656,55 @@
   <!-- LAUNCH button on the drill HUD area — appears when samples ≥ 1 -->
   <button id="btn-launch-prep" style="display:none;position:fixed;bottom:55px;right:16px;z-index:1102;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.18em;padding:7px 14px;background:rgba(255,180,50,0.12);color:#FFB432;border:1px solid rgba(255,180,50,0.6);border-radius:4px;cursor:pointer;backdrop-filter:blur(12px);transition:all 0.2s ease;">⇪ LAUNCH PREP</button>
 
-  <!-- LAUNCH PREP HUD — skate-trick balance bar (Tony Hawk style) + circular gyro reference -->
-  <div id="launch-prep-hud" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1900;width:480px;background:linear-gradient(180deg,rgba(8,12,18,0.96),rgba(0,0,0,0.94));border:2px solid rgba(255,180,50,0.85);border-radius:12px;padding:24px 28px;font-family:'Share Tech Mono',monospace;color:#FFB432;backdrop-filter:blur(16px);text-align:center;letter-spacing:0.18em;box-shadow:0 0 60px rgba(255,180,50,0.3),inset 0 0 40px rgba(255,180,50,0.05);">
-    <div style="font-size:18px;font-weight:bold;margin-bottom:6px;color:#FFB432;letter-spacing:0.32em;">⇪ LAUNCH PREP</div>
-    <div style="font-size:9px;color:rgba(255,180,50,0.6);margin-bottom:18px;letter-spacing:0.22em;">BALANCE THE ROVER · KEEP THE ARROW IN THE GREEN</div>
+  <!-- LAUNCH PREP HUD — transparent glass panel, balance bar + sky cam -->
+  <div id="launch-prep-hud" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1900;width:480px;background:rgba(0,0,0,0.38);border:1.5px solid rgba(255,180,50,0.65);border-radius:14px;padding:22px 26px;font-family:'Share Tech Mono',monospace;color:#FFB432;backdrop-filter:blur(8px);text-align:center;letter-spacing:0.18em;box-shadow:0 0 40px rgba(255,180,50,0.2);">
+    <div style="font-family:'Orbitron','Share Tech Mono',monospace;font-size:15px;font-weight:900;margin-bottom:5px;color:#FFB432;letter-spacing:0.28em;">⇪ LAUNCH PREP</div>
+    <div style="font-size:8px;color:rgba(255,180,50,0.55);margin-bottom:16px;letter-spacing:0.2em;">BALANCE THE ROVER · KEEP THE ARROW IN THE GREEN</div>
 
-    <!-- SKATE TRICK BALANCE BAR — horizontal, arrow position reflects pitch+roll -->
+    <!-- SKATE TRICK BALANCE BAR -->
     <div id="balance-bar-wrap" style="position:relative;width:100%;height:54px;margin-bottom:14px;">
-      <!-- Track -->
-      <div style="position:absolute;left:0;right:0;top:50%;height:14px;transform:translateY(-50%);background:linear-gradient(90deg,rgba(255,68,68,0.5) 0%,rgba(255,180,50,0.3) 30%,rgba(180,255,80,0.5) 50%,rgba(255,180,50,0.3) 70%,rgba(255,68,68,0.5) 100%);border:1px solid rgba(255,255,255,0.2);border-radius:7px;"></div>
-      <!-- Center mark -->
-      <div style="position:absolute;left:50%;top:50%;width:2px;height:30px;background:rgba(255,255,255,0.6);transform:translate(-50%,-50%);"></div>
-      <!-- Sweet zone (level) — green band -->
-      <div id="balance-sweet-zone" style="position:absolute;left:50%;top:50%;width:90px;height:22px;background:rgba(180,255,80,0.18);border:1.5px solid rgba(180,255,80,0.7);border-radius:4px;transform:translate(-50%,-50%);transition:width 0.3s ease,background 0.2s ease;"></div>
-      <!-- Arrow pointer — moves left/right with rover tilt -->
+      <div style="position:absolute;left:0;right:0;top:50%;height:14px;transform:translateY(-50%);background:linear-gradient(90deg,rgba(255,68,68,0.5) 0%,rgba(255,180,50,0.3) 30%,rgba(180,255,80,0.5) 50%,rgba(255,180,50,0.3) 70%,rgba(255,68,68,0.5) 100%);border:1px solid rgba(255,255,255,0.18);border-radius:7px;"></div>
+      <div style="position:absolute;left:50%;top:50%;width:2px;height:30px;background:rgba(255,255,255,0.55);transform:translate(-50%,-50%);"></div>
+      <div id="balance-sweet-zone" style="position:absolute;left:50%;top:50%;width:90px;height:22px;background:rgba(180,255,80,0.15);border:1.5px solid rgba(180,255,80,0.7);border-radius:4px;transform:translate(-50%,-50%);transition:width 0.3s ease,background 0.2s ease;"></div>
       <div id="balance-arrow" style="position:absolute;left:50%;top:50%;width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;border-top:18px solid #FFB432;transform:translate(-50%,-22px);filter:drop-shadow(0 0 6px rgba(255,180,50,0.9));transition:left 0.06s linear;"></div>
-      <!-- Numeric labels -->
       <div style="position:absolute;left:0;top:0;font-size:8px;color:rgba(255,68,68,0.7);">−15°</div>
       <div style="position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:8px;color:rgba(180,255,80,0.9);font-weight:bold;">0°</div>
       <div style="position:absolute;right:0;top:0;font-size:8px;color:rgba(255,68,68,0.7);">+15°</div>
     </div>
 
-    <!-- Pitch+Roll mini gyro (kept as secondary reference) -->
-    <div id="gyro-outer" style="position:relative;width:96px;height:96px;border:1px solid rgba(255,180,50,0.4);border-radius:50%;margin:0 auto 12px auto;background:radial-gradient(circle,rgba(255,180,50,0.06) 0%,rgba(0,0,0,0.4) 70%);">
-      <div style="position:absolute;left:50%;top:0;width:1px;height:100%;background:rgba(255,180,50,0.2);transform:translateX(-50%);"></div>
-      <div style="position:absolute;top:50%;left:0;height:1px;width:100%;background:rgba(255,180,50,0.2);transform:translateY(-50%);"></div>
-      <div id="gyro-safe" style="position:absolute;left:50%;top:50%;width:18px;height:18px;border:1px solid rgba(180,255,80,0.6);border-radius:50%;transform:translate(-50%,-50%);"></div>
-      <div id="gyro-dot" style="position:absolute;left:50%;top:50%;width:8px;height:8px;background:#FFB432;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 8px rgba(255,180,50,0.9);transition:all 0.06s linear;"></div>
+    <!-- SKY CAM viewport — transparent hole for scissor render -->
+    <div style="position:relative;width:160px;height:160px;margin:0 auto 12px auto;">
+      <!-- Sky cam renders here via scissor (background must be transparent) -->
+      <div id="launch-sky-viewport" style="position:absolute;inset:0;border-radius:50%;overflow:hidden;background:transparent;border:1.5px solid rgba(255,180,50,0.45);z-index:0;"></div>
+      <!-- Crosshair over the sky cam -->
+      <div style="position:absolute;inset:0;pointer-events:none;z-index:2;">
+        <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,180,50,0.25);transform:translateX(-50%);"></div>
+        <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(255,180,50,0.25);transform:translateY(-50%);"></div>
+        <div id="gyro-safe" style="position:absolute;left:50%;top:50%;width:20px;height:20px;border:1.5px solid rgba(180,255,80,0.65);border-radius:50%;transform:translate(-50%,-50%);"></div>
+        <div id="gyro-dot" style="position:absolute;left:50%;top:50%;width:9px;height:9px;background:#FFB432;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 10px rgba(255,180,50,1);transition:all 0.06s linear;"></div>
+      </div>
+      <!-- Dummy gyro-outer kept for JS compat -->
+      <div id="gyro-outer" style="display:none;"></div>
     </div>
 
-    <div id="gyro-status" style="font-size:11px;margin-bottom:6px;color:rgba(255,180,50,0.8);font-weight:bold;letter-spacing:0.22em;">TILT: 0° · UNLEVEL</div>
-    <div id="gyro-feedback" style="font-size:8px;margin-bottom:18px;color:rgba(255,255,255,0.4);letter-spacing:0.18em;height:12px;">—</div>
+    <div id="gyro-status" style="font-family:'Orbitron','Share Tech Mono',monospace;font-size:10px;margin-bottom:5px;color:rgba(255,180,50,0.9);font-weight:700;letter-spacing:0.2em;">TILT: 0° · UNLEVEL</div>
+    <div id="gyro-feedback" style="font-size:8px;margin-bottom:16px;color:rgba(255,255,255,0.5);letter-spacing:0.18em;height:12px;">—</div>
 
     <div style="display:flex;gap:10px;justify-content:center;">
-      <button id="btn-launch-cancel" style="font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:0.18em;padding:9px 18px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.3);border-radius:4px;cursor:pointer;">CANCEL</button>
-      <button id="btn-launch-fire" disabled style="font-family:'Share Tech Mono',monospace;font-size:13px;font-weight:bold;letter-spacing:0.28em;padding:11px 28px;background:rgba(180,255,80,0.08);color:rgba(180,255,80,0.4);border:2px solid rgba(180,255,80,0.3);border-radius:4px;cursor:not-allowed;opacity:0.5;">▲ LAUNCH</button>
+      <button id="btn-launch-cancel" style="font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:0.18em;padding:9px 18px;background:rgba(0,0,0,0.3);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.25);border-radius:4px;cursor:pointer;">CANCEL</button>
+      <button id="btn-launch-fire" disabled style="font-family:'Orbitron','Share Tech Mono',monospace;font-size:12px;font-weight:700;letter-spacing:0.25em;padding:11px 28px;background:rgba(180,255,80,0.06);color:rgba(180,255,80,0.4);border:2px solid rgba(180,255,80,0.3);border-radius:4px;cursor:not-allowed;opacity:0.5;">▲ LAUNCH</button>
     </div>
-    <div id="launch-prep-samples" style="font-size:9px;color:rgba(255,255,255,0.5);margin-top:14px;letter-spacing:0.22em;">SAMPLES ABOARD: 0</div>
+    <div id="launch-prep-samples" style="font-size:9px;color:rgba(255,255,255,0.45);margin-top:12px;letter-spacing:0.22em;">SAMPLES ABOARD: 0</div>
   </div>
 
   <!-- DIMMER — softens the rest of the UI when launch sequence is active (Tony Hawk style focus) -->
   <div id="launch-dimmer" style="display:none;position:fixed;inset:0;z-index:1090;background:radial-gradient(ellipse at center,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.85) 100%);pointer-events:none;backdrop-filter:blur(2px);transition:opacity 0.6s ease;"></div>
 
-  <!-- LAUNCH COUNTDOWN — 5..4..3..2..1 then ▲ LAUNCH -->
-  <div id="launch-countdown" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2400;font-family:'Share Tech Mono',monospace;font-size:140px;font-weight:bold;color:#FFB432;letter-spacing:0.05em;text-shadow:0 0 60px rgba(255,180,50,0.7),0 0 120px rgba(255,180,50,0.3);pointer-events:none;">5</div>
+  <!-- LAUNCH COUNTDOWN — 5..4..3..2..1 Orbitron digital clock style -->
+  <div id="launch-countdown" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2400;font-family:'Orbitron','Share Tech Mono',monospace;font-size:140px;font-weight:900;color:#00FFE0;letter-spacing:0.05em;text-shadow:0 0 40px #00FFE0,0 0 80px #00FFE044;pointer-events:none;text-align:center;line-height:1;">5</div>
 
   <!-- PROBE CAM panel — orbital around the rocket while ascending. CENTERED BIG MODAL when active -->
-  <div id="probe-cam-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1101;width:780px;height:520px;background:transparent;border:2px solid rgba(180,255,80,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 60px rgba(180,255,80,0.25),inset 0 0 60px rgba(0,0,0,0.4);">
+  <div id="probe-cam-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1800;width:840px;height:560px;background:transparent;border:2px solid rgba(180,255,80,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 60px rgba(180,255,80,0.25),inset 0 0 60px rgba(0,0,0,0.4);">
     <div id="probe-cam-label" style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(180,255,80,0.85);letter-spacing:0.18em;cursor:grab;pointer-events:auto;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);">
       <span>▲ PROBE ORBITAL · A/D ROTATE</span>
       <button id="probe-cam-close" style="background:none;border:none;color:rgba(180,255,80,0.5);cursor:pointer;font-size:11px;padding:0;line-height:1;pointer-events:auto;">✕</button>
@@ -670,7 +723,7 @@
   </div>
 
   <!-- CAPSULE CHASE CAM — large modal, mouse-aimed crosshair (Capa 4 v2) -->
-  <div id="capsule-cam-panel" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1101;width:880px;height:560px;background:transparent;border:2px solid rgba(0,255,224,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 80px rgba(0,255,224,0.35),inset 0 0 40px rgba(0,0,0,0.4);">
+  <div id="capsule-cam-panel" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1800;width:880px;height:560px;background:transparent;border:2px solid rgba(0,255,224,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 80px rgba(0,255,224,0.35),inset 0 0 40px rgba(0,0,0,0.4);">
     <div id="capsule-cam-label" style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:6px 12px;font-family:'Share Tech Mono',monospace;font-size:10px;color:#00FFE0;letter-spacing:0.2em;cursor:grab;pointer-events:auto;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);">
       <span style="font-weight:bold;">◉ CAPSULE TRAJECTORY · MOUSE TO STEER · FIND SAT_SLOT</span>
       <span id="capsule-distance" style="font-size:9px;color:rgba(0,255,224,0.85);font-weight:bold;">DIST: —</span>
@@ -724,10 +777,10 @@
       100% { transform: translate(-50%,-50%) scale(0.85); opacity: 0; }
     }
     @keyframes countdownTick {
-      0%   { transform: translate(-50%,-50%) scale(2.2); opacity: 0; }
-      30%  { transform: translate(-50%,-50%) scale(1); opacity: 1; }
-      85%  { transform: translate(-50%,-50%) scale(1); opacity: 1; }
-      100% { transform: translate(-50%,-50%) scale(0.6); opacity: 0; }
+      0%   { transform: translate(-50%,-50%) scale(2.4); opacity: 0; }
+      25%  { transform: translate(-50%,-50%) scale(1.05); opacity: 1; }
+      80%  { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%,-50%) scale(0.55); opacity: 0; }
     }
     @keyframes balanceSweetPulse {
       0%, 100% { box-shadow: 0 0 0 rgba(180,255,80,0); }
@@ -737,6 +790,14 @@
       from { transform: scaleY(0); }
       to   { transform: scaleY(1); }
     }
+    @keyframes drillHoldPulse {
+      0%, 100% { opacity: 0.6; transform: translate(-50%,-50%) scale(1); }
+      50%      { opacity: 1; transform: translate(-50%,-50%) scale(1.04); box-shadow: 0 0 22px rgba(0,255,224,0.5); }
+    }
+    @keyframes lightsOnPulse {
+      from { box-shadow: 0 0 6px rgba(255,180,50,0.4); }
+      to   { box-shadow: 0 0 18px rgba(255,180,50,0.8); }
+    }
     .drill-cam-tab.active { background: rgba(0,255,224,0.18) !important; color: #00FFE0 !important; }
     .glass-tube { position: relative; width: 22px; height: 56px; }
     .glass-tube .tube-cap { position:absolute; top:-3px; left:50%; transform:translateX(-50%); width:18px; height:5px; background:linear-gradient(180deg,#888,#555); border-radius:2px 2px 0 0; box-shadow:0 0 4px rgba(0,0,0,0.6); z-index:3; }
@@ -744,6 +805,9 @@
     .glass-tube .tube-fill { position:absolute; left:0; right:0; bottom:0; transform-origin:bottom; transition: height 0.4s cubic-bezier(0.4,0,0.2,1); }
     .glass-tube .tube-shine { position:absolute; left:18%; top:6%; width:14%; height:80%; background:linear-gradient(180deg,rgba(255,255,255,0.25),transparent 60%); border-radius:50%; pointer-events:none; }
     .glass-tube .tube-meniscus { position:absolute; left:0; right:0; height:3px; background:linear-gradient(180deg,rgba(255,255,255,0.35),transparent); pointer-events:none; }
+    /* TORNO split wrap needs flex when shown */
+    #drill-split-wrap { display: none; }
+    #drill-split-wrap.open { display: flex !important; }
   </style>
 
   <script type="module" src="/src/main.js"></script>

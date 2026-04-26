@@ -213,8 +213,8 @@ let probeLaunchPos = null                // where the rocket left from (rover sp
 let _probeLaunchTime = 0                 // performance.now() at launch
 const PROBE_LAUNCH_IMPULSE = 22          // initial Y kick — slower take-off feels cinematic
 const PROBE_GRAVITY_SCALE = -0.025       // gentler continuous propulsion (longer flight)
-const PROBE_EJECT_MIN_ALT = 95           // window starts higher (more travel)
-const PROBE_EJECT_MAX_ALT = 135          // tighter window — more challenging timing
+const PROBE_EJECT_MIN_ALT = 105          // v3 — narrowed window (more challenge)
+const PROBE_EJECT_MAX_ALT = 125          // was 95–135 (40m range) → now 105–125 (20m, 50% tighter)
 const PROBE_MAX_FLIGHT_TIME = 50         // safety: capsule auto-fires if player misses
 
 // Capsule (Capa 4)
@@ -248,6 +248,24 @@ let _capsuleMouseX = 0, _capsuleMouseY = 0  // -1..1 normalized mouse position i
 let _capsuleMouseActive = false
 let _launchCountdownTimer = null
 let _missionReturnAnim = null           // {start, duration} for cinematic camera return after capture
+// v3 — split TORNO panels, sky cam, cinematic countdown, rover lights
+let drillFloorCamera = null             // fisheye underbelly cam (left panel)
+let launchSkyCamera = null              // up-looking cam inside launch-prep gyro area
+let _countdownCinemaActive = false
+let _cdCamAngle = 0                     // current orbit angle (radians)
+let _cdCamHeight = 80                   // starting height above rover
+let _cdCamRadius = 60                   // orbit radius
+// Rover lights (L key)
+let _lightsOn = false
+let _highBeam = false
+let _headlightMeshes = []               // 4 white rect meshes (front face of rover)
+let _headlightLights = []               // 4 SpotLights
+let _tailLightMeshes = []              // 2 red rect meshes (rear)
+let _tailLightLights = []
+let _turnMeshL = null, _turnMeshR = null // orange blinkers
+let _turnLightL = null, _turnLightR = null
+let _brakeMesh = null, _brakeLight = null
+let _turnBlinkT = 0                     // accumulator for blinker flash
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INIT
@@ -344,6 +362,8 @@ async function init() {
   initDrillModule()
   // CAPA 2/3/4 — PROBE / EJECT / CAPSULE (additive)
   initProbeModule()
+  // v3 — rover lights
+  initRoverLights()
 
   // Events
   setupEvents()
@@ -1749,8 +1769,14 @@ function animate() {
   if (minimapOpen) renderMinimapScissor()
   // Right View — 3D side scissor render
   if (rightViewOpen) renderRightViewScissor()
-  // CAPA 1 — TORNO interior cam scissor render
-  if (drillCamOpen) renderDrillCamScissor()
+  // v3 — rover lights tick
+  tickRoverLights(FIXED_DT)
+  // v3 — cinematic countdown camera override (before renders)
+  if (_countdownCinemaActive) _tickCountdownCamera(FIXED_DT)
+  // CAPA 1 — TORNO floor + front cam scissor renders
+  if (drillCamOpen) { renderFloorCamScissor(); renderDrillCamScissor() }
+  // CAPA 2 — launch prep sky cam
+  renderLaunchSkyCamScissor()
   // CAPA 2/3 — PROBE orbital scissor render
   renderProbeCamScissor()
   // CAPA 4 — CAPSULE chase scissor render
@@ -4360,13 +4386,20 @@ function tickDrillSampling(dt) {
   const telBiome = document.getElementById('drill-tel-biome')
   const telSub = document.getElementById('drill-tel-sub')
 
+  // v3 — big floor pct element
+  const floorPctEl = document.getElementById('drill-floor-pct')
+
   if (eHeld && roverSamples.length < MAX_SAMPLES) {
     drillSampleHoldActive = true
     drillSampleHoldTime += dt
     const pct = Math.min(1, drillSampleHoldTime / DRILL_SAMPLE_HOLD_DURATION)
-    // Ring + percent
-    if (ring)  { ring.style.display = 'block'; ring.style.transform = `rotate(${pct * 360}deg)`; ring.style.borderTopColor = pct >= 1 ? '#B4FF50' : '#00FFE0' }
-    if (pctEl) { pctEl.style.display = 'block'; pctEl.textContent = `${Math.round(pct * 100)}%`; pctEl.style.color = pct >= 1 ? '#B4FF50' : '#00FFE0' }
+    const pctTxt = `${Math.round(pct * 100)}%`
+    const pctColor = pct >= 1 ? '#B4FF50' : '#00FFE0'
+    // Ring + small pct (FRONT panel reticle)
+    if (ring)  { ring.style.display = 'block'; ring.style.transform = `rotate(${pct * 360}deg)`; ring.style.borderTopColor = pctColor }
+    if (pctEl) { pctEl.style.display = 'block'; pctEl.textContent = pctTxt; pctEl.style.color = pctColor }
+    // Big digital % on FLOOR panel
+    if (floorPctEl) { floorPctEl.style.display = 'block'; floorPctEl.textContent = pctTxt; floorPctEl.style.color = pctColor }
     if (status) { status.textContent = `DRILL · ${Math.round(pct * 100)}%`; status.style.color = '#00FFE0' }
     if (telDepth) telDepth.textContent = `${(pct * 1.4).toFixed(2)}m`
     if (telBiome) { const cur = getBiomeAtY(_drillGetGroundY() + 0.01); telBiome.textContent = cur.name }
@@ -4391,6 +4424,7 @@ function tickDrillSampling(dt) {
       drillSampleHoldTime = 0
       if (ring) ring.style.display = 'none'
       if (pctEl) pctEl.style.display = 'none'
+      if (floorPctEl) floorPctEl.style.display = 'none'
       if (status) {
         if (roverSamples.length >= MAX_SAMPLES) { status.textContent = 'FULL · LAUNCH'; status.style.color = '#FFB432' }
         else { status.textContent = 'IDLE'; status.style.color = 'rgba(255,255,255,0.5)' }
@@ -4447,31 +4481,68 @@ const _drillCamFwd = new THREE.Vector3()
 const _drillCamUp  = new THREE.Vector3()
 const _drillCamPos = new THREE.Vector3()
 const _drillLookAt = new THREE.Vector3()
-function renderDrillCamScissor() {
+// v3 — FLOOR cam: fisheye B&W, left panel of split layout
+function renderFloorCamScissor() {
   if (!chassisBody) return
-  const panel = document.getElementById('drill-cam-panel')
-  if (!panel || panel.style.display === 'none') return
-  if (!drillCamera) drillCamera = new THREE.PerspectiveCamera(95, 1, 0.1, 200)
+  const panel = document.getElementById('drill-floor-panel')
+  if (!panel) return
+  const wrap = document.getElementById('drill-split-wrap')
+  if (!wrap || wrap.style.display === 'none') return
+  if (!drillFloorCamera) drillFloorCamera = new THREE.PerspectiveCamera(170, 1, 0.05, 150)
   const rect = panel.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return
 
-  _drillCamUp.set(0, 1, 0).applyQuaternion(chassisQuat)
-  _drillCamFwd.set(1, 0, 0).applyQuaternion(chassisQuat)
+  const up  = new THREE.Vector3(0, 1, 0).applyQuaternion(chassisQuat)
+  const fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisQuat)
+  // Very close to ground, directly below chassis looking straight down (fisheye at 170°)
+  drillFloorCamera.position.copy(chassisPos).addScaledVector(up, -0.3).addScaledVector(fwd, 0.1)
+  drillFloorCamera.up.copy(fwd)
+  drillFloorCamera.lookAt(chassisPos.clone().addScaledVector(up, -3))
+  drillFloorCamera.aspect = rect.width / rect.height
+  drillFloorCamera.updateProjectionMatrix()
 
-  if (drillCamMode === 'front') {
-    // Fish-eye over the hood — much wider FOV, low to the ground, looking forward + slightly down
-    drillCamera.fov = 130
-    _drillCamPos.copy(chassisPos).addScaledVector(_drillCamFwd, 1.2).addScaledVector(_drillCamUp, 0.6)
-    _drillLookAt.copy(chassisPos).addScaledVector(_drillCamFwd, 6).addScaledVector(_drillCamUp, -0.8)
-  } else {
-    // Floor mode (default) — under the chassis looking down
-    drillCamera.fov = 95
-    _drillCamPos.copy(chassisPos).addScaledVector(_drillCamUp, 0.55)
-    _drillLookAt.copy(chassisPos).addScaledVector(_drillCamUp, -2.5).addScaledVector(_drillCamFwd, 0.6)
+  const canvasRect = renderer.domElement.getBoundingClientRect()
+  const sx = Math.round(rect.left - canvasRect.left)
+  const sy = Math.round(rect.top  - canvasRect.top)
+  renderer.setScissorTest(true)
+  renderer.setScissor(sx, sy, Math.round(rect.width), Math.round(rect.height))
+  renderer.setViewport(sx, sy, Math.round(rect.width), Math.round(rect.height))
+  renderer.render(scene, drillFloorCamera)
+  renderer.setScissorTest(false)
+  renderer.setViewport(0, 0, renderer.domElement.clientWidth, renderer.domElement.clientHeight)
+
+  // Sync floor depth readout
+  const depthEl = document.getElementById('drill-floor-depth')
+  if (depthEl && chassisBody) {
+    const groundY = typeof getTerrainHeight === 'function' ? getTerrainHeight(chassisPos.x, chassisPos.z) : 0
+    const depth = Math.max(0, chassisPos.y - groundY)
+    depthEl.textContent = depth.toFixed(2) + 'm'
   }
+}
+
+// v3 FRONT cam: now always renders into #drill-front-panel (right half of split)
+function renderDrillCamScissor() {
+  if (!chassisBody) return
+  // Use the right-half front panel in the split layout
+  const panel = document.getElementById('drill-front-panel') || document.getElementById('drill-cam-panel')
+  if (!panel) return
+  const wrap = document.getElementById('drill-split-wrap')
+  // If split wrap exists but hidden, bail out
+  if (wrap && wrap.style.display === 'none') return
+  if (!wrap && panel.style.display === 'none') return
+  if (!drillCamera) drillCamera = new THREE.PerspectiveCamera(130, 1, 0.1, 300)
+  const rect = panel.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+
+  const up  = new THREE.Vector3(0, 1, 0).applyQuaternion(chassisQuat)
+  const fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisQuat)
+  // FRONT cam: always 130° over the hood, slightly angled down
+  drillCamera.fov = 130
+  _drillCamPos.copy(chassisPos).addScaledVector(fwd, 1.2).addScaledVector(up, 0.6)
+  _drillLookAt.copy(chassisPos).addScaledVector(fwd, 8).addScaledVector(up, -0.8)
 
   drillCamera.position.copy(_drillCamPos)
-  drillCamera.up.copy(_drillCamUp)
+  drillCamera.up.copy(up)
   drillCamera.lookAt(_drillLookAt)
   drillCamera.aspect = rect.width / rect.height
   drillCamera.updateProjectionMatrix()
@@ -4492,66 +4563,55 @@ function initDrillModule() {
   if (initDrillModule._ran) return
   initDrillModule._ran = true
 
-  const btnDrill = document.getElementById('btn-drill')
-  const panel    = document.getElementById('drill-cam-panel')
-  const hud      = document.getElementById('drill-hud')
-  const closeBtn = document.getElementById('drill-cam-close')
-  const handle   = document.getElementById('drill-cam-resize-handle')
+  const btnDrill  = document.getElementById('btn-drill')
+  const panel     = document.getElementById('drill-cam-panel')   // legacy dummy (kept for ID compat)
+  const splitWrap = document.getElementById('drill-split-wrap')  // v3 split layout
+  const hud       = document.getElementById('drill-hud')
+  const closeBtn  = document.getElementById('drill-cam-close')
+  const holdPrompt = document.getElementById('drill-hold-prompt')
 
   function openPanel(open) {
     drillCamOpen = open
-    if (panel) panel.style.display = open ? 'block' : 'none'
-    if (hud)   hud.style.display   = open ? 'block' : 'none'
+    // v3: show the split-screen wrap; old panel stays hidden
+    if (splitWrap) splitWrap.style.display = open ? 'flex' : 'none'
+    if (panel)     panel.style.display     = 'none'  // always hidden, just a DOM ID holder
+    if (hud)       hud.style.display       = open ? 'block' : 'none'
+    if (holdPrompt) holdPrompt.style.display = open ? 'block' : 'none'
     if (btnDrill) {
-      btnDrill.style.background = open ? 'rgba(0,255,224,0.18)' : 'rgba(0,0,0,0.82)'
-      btnDrill.style.color      = open ? '#00FFE0' : 'rgba(255,255,255,0.55)'
+      btnDrill.style.background  = open ? 'rgba(0,255,224,0.18)' : 'rgba(0,0,0,0.82)'
+      btnDrill.style.color       = open ? '#00FFE0' : 'rgba(255,255,255,0.55)'
       btnDrill.style.borderColor = open ? 'rgba(0,255,224,0.7)' : 'rgba(255,255,255,0.12)'
     }
     if (open) {
-      // First-open positioning hint
-      if (panel && !panel._drillInitialized) {
-        panel._drillInitialized = true
-        try { makeDraggable('drill-cam-panel', 'drill-cam-label') } catch(e){}
-        try { attachResizeHandle(panel, handle, 'right') } catch(e){}
-      }
       if (hud && !hud._drillHudDraggable) {
         hud._drillHudDraggable = true
         try { makeDraggable('drill-hud', 'drill-hud-header') } catch(e){}
       }
       updateDrillHUD()
-      showToast('TORNO ON · HOLD [E] TO DRILL', '#FFFFFF', 1500)
+      showToast('TORNO ON · HOLD [E] TO DRILL', '#00FFE0', 1800)
     } else {
       drillSampleHoldActive = false
-      drillSampleHoldTime = 0
+      drillSampleHoldTime   = 0
       const ring = document.getElementById('drill-progress-ring')
       if (ring) ring.style.display = 'none'
+      const floorPct = document.getElementById('drill-floor-pct')
+      if (floorPct) floorPct.style.display = 'none'
+      const pctEl = document.getElementById('drill-progress-pct')
+      if (pctEl) pctEl.style.display = 'none'
     }
   }
 
   if (btnDrill) btnDrill.addEventListener('click', () => openPanel(!drillCamOpen))
   if (closeBtn) closeBtn.addEventListener('click', () => openPanel(false))
 
-  // v2 — FLOOR / FRONT cam toggle
+  // v3 — close button on FRONT panel
+  const frontClose = document.getElementById('drill-front-close')
+  if (frontClose) frontClose.addEventListener('click', () => openPanel(false))
+  // legacy FLOOR/FRONT tab close (kept for ID compat; tabs no longer needed in split layout)
   const tabFloor = document.getElementById('drill-cam-floor')
   const tabFront = document.getElementById('drill-cam-front')
-  function setCamMode(mode) {
-    drillCamMode = mode
-    if (tabFloor) tabFloor.classList.toggle('active', mode === 'floor')
-    if (tabFront) tabFront.classList.toggle('active', mode === 'front')
-    if (tabFloor) {
-      tabFloor.style.background = mode === 'floor' ? 'rgba(0,255,224,0.18)' : 'transparent'
-      tabFloor.style.color      = mode === 'floor' ? '#00FFE0' : 'rgba(255,255,255,0.55)'
-    }
-    if (tabFront) {
-      tabFront.style.background = mode === 'front' ? 'rgba(0,255,224,0.18)' : 'transparent'
-      tabFront.style.color      = mode === 'front' ? '#00FFE0' : 'rgba(255,255,255,0.55)'
-    }
-    const telSub = document.getElementById('drill-tel-sub')
-    if (telSub) telSub.textContent = mode === 'floor' ? 'FLOOR' : 'FRONT'
-    showToast(`TORNO CAM: ${mode.toUpperCase()}`, '#00FFE0', 900)
-  }
-  if (tabFloor) tabFloor.addEventListener('click', () => setCamMode('floor'))
-  if (tabFront) tabFront.addEventListener('click', () => setCamMode('front'))
+  if (tabFloor) tabFloor.addEventListener('click', () => {})
+  if (tabFront) tabFront.addEventListener('click', () => {})
 
   // Keyboard — additive listener, does not interfere with setupEvents()
   // KeyT toggles the panel. KeyE is read in tickDrillSampling via the existing keys{} map.
@@ -4572,6 +4632,143 @@ window.DrillDebug = {
   add:  () => { sampleBiome() },
   clear: () => { roverSamples = []; window.roverSamples = roverSamples; updateDrillHUD(); console.log('[DRILL] samples cleared') },
   open:  () => { const b = document.getElementById('btn-drill'); if (b) b.click() }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v3 — LAUNCH SKY CAM + COUNTDOWN CINEMATIC + ROVER LIGHTS (additive)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Sky-up cam for launch prep gyro area
+function renderLaunchSkyCamScissor() {
+  if (probeState !== 'prep' || !chassisBody) return
+  const vp = document.getElementById('launch-sky-viewport')
+  if (!vp || vp.style.display === 'none') return
+  const rect = vp.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+  if (!launchSkyCamera) launchSkyCamera = new THREE.PerspectiveCamera(100, 1, 0.5, 1200)
+  // Position at rover, look straight up
+  const up  = new THREE.Vector3(0, 1, 0).applyQuaternion(chassisQuat)
+  const fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisQuat)
+  launchSkyCamera.position.copy(chassisPos).addScaledVector(up, 0.4)
+  launchSkyCamera.up.copy(fwd)
+  launchSkyCamera.lookAt(chassisPos.clone().addScaledVector(up, 30))
+  launchSkyCamera.aspect = rect.width / rect.height
+  launchSkyCamera.updateProjectionMatrix()
+  const canvasRect = renderer.domElement.getBoundingClientRect()
+  const sx = Math.round(rect.left - canvasRect.left)
+  const sy = Math.round(rect.top  - canvasRect.top)
+  renderer.setScissorTest(true)
+  renderer.setScissor(sx, sy, Math.round(rect.width), Math.round(rect.height))
+  renderer.setViewport(sx, sy, Math.round(rect.width), Math.round(rect.height))
+  renderer.render(scene, launchSkyCamera)
+  renderer.setScissorTest(false)
+  renderer.setViewport(0, 0, renderer.domElement.clientWidth, renderer.domElement.clientHeight)
+}
+
+// Cinematic camera tick during 5..4..3..2..1 countdown
+function _tickCountdownCamera(dt) {
+  if (!_countdownCinemaActive || !chassisBody) return
+  _cdCamAngle += dt * 0.65   // orbit speed
+  _cdCamHeight = Math.max(12, _cdCamHeight - dt * 9)   // descend from 80 → 12
+  _cdCamRadius = Math.max(14, _cdCamRadius - dt * 6)   // tighten orbit 60 → 14
+  const cx = chassisPos.x + Math.cos(_cdCamAngle) * _cdCamRadius
+  const cz = chassisPos.z + Math.sin(_cdCamAngle) * _cdCamRadius
+  const cy = chassisPos.y + _cdCamHeight
+  camera.position.set(cx, cy, cz)
+  camera.lookAt(chassisPos.x, chassisPos.y + 2, chassisPos.z)
+}
+
+// ──────── ROVER LIGHTS (L key: toggle, LL: high/low beam) ────────
+function initRoverLights() {
+  if (initRoverLights._ran) return
+  initRoverLights._ran = true
+
+  // Lights are created lazily the first time the chassis is available
+  addEventListener('keydown', (e) => {
+    if (e.repeat) return
+    if (e.code === 'KeyL') {
+      _lightsOn = !_lightsOn
+      _spawnRoverLights()
+      showToast(_lightsOn ? 'LIGHTS ON' : 'LIGHTS OFF', '#FFB432', 900)
+    }
+  })
+
+  const btn = document.getElementById('btn-rover-lights')
+  if (btn) btn.addEventListener('click', () => {
+    _lightsOn = !_lightsOn
+    _spawnRoverLights()
+    btn.style.color = _lightsOn ? '#FFB432' : 'rgba(255,255,255,0.55)'
+    btn.style.borderColor = _lightsOn ? 'rgba(255,180,50,0.7)' : 'rgba(255,255,255,0.12)'
+    btn.style.background = _lightsOn ? 'rgba(255,180,50,0.14)' : 'rgba(0,0,0,0.82)'
+  })
+}
+
+function _spawnRoverLights() {
+  if (!chassisGroup) return
+  // Remove old lights & meshes
+  _headlightMeshes.forEach(m => chassisGroup.remove(m))
+  _headlightLights.forEach(l => chassisGroup.remove(l))
+  _tailLightMeshes.forEach(m => chassisGroup.remove(m))
+  _tailLightLights.forEach(l => chassisGroup.remove(l))
+  if (_turnMeshL) chassisGroup.remove(_turnMeshL)
+  if (_turnMeshR) chassisGroup.remove(_turnMeshR)
+  if (_turnLightL) chassisGroup.remove(_turnLightL)
+  if (_turnLightR) chassisGroup.remove(_turnLightR)
+  if (_brakeMesh)  chassisGroup.remove(_brakeMesh)
+  if (_brakeLight) chassisGroup.remove(_brakeLight)
+  _headlightMeshes = []; _headlightLights = []
+  _tailLightMeshes = []; _tailLightLights = []
+  _turnMeshL = _turnMeshR = _turnLightL = _turnLightR = null
+  _brakeMesh = _brakeLight = null
+  if (!_lightsOn) return
+
+  const matWhite = new THREE.MeshBasicMaterial({ color: 0xffffff })
+  const matRed   = new THREE.MeshBasicMaterial({ color: 0xff2200 })
+  const matOrange = new THREE.MeshBasicMaterial({ color: 0xff8800 })
+  const headGeo  = new THREE.BoxGeometry(0.05, 0.12, 0.28)
+  const tailGeo  = new THREE.BoxGeometry(0.05, 0.10, 0.22)
+  const turnGeo  = new THREE.BoxGeometry(0.05, 0.07, 0.14)
+
+  // 4 front headlight positions [x fwd, y up, z side]
+  const hPos = [[1.55, 0.45, -0.55], [1.55, 0.45, 0.55], [1.55, 0.55, -0.55], [1.55, 0.55, 0.55]]
+  hPos.forEach(([x, y, z]) => {
+    const mesh = new THREE.Mesh(headGeo, matWhite); mesh.position.set(x, y, z); chassisGroup.add(mesh); _headlightMeshes.push(mesh)
+    const spot = new THREE.SpotLight(0xffffff, 6, 35, Math.PI / 8, 0.4)
+    spot.position.set(x, y, z); spot.target.position.set(x + 12, y - 1.5, z); chassisGroup.add(spot); chassisGroup.add(spot.target); _headlightLights.push(spot)
+  })
+
+  // 2 rear tail lights
+  const tPos = [[-1.55, 0.45, -0.5], [-1.55, 0.45, 0.5]]
+  tPos.forEach(([x, y, z]) => {
+    const mesh = new THREE.Mesh(tailGeo, matRed); mesh.position.set(x, y, z); chassisGroup.add(mesh); _tailLightMeshes.push(mesh)
+    const pt = new THREE.PointLight(0xff1100, 1.5, 8); pt.position.set(x, y, z); chassisGroup.add(pt); _tailLightLights.push(pt)
+  })
+
+  // Turn signals (orange)
+  _turnMeshL = new THREE.Mesh(turnGeo, matOrange); _turnMeshL.position.set(1.5, 0.42, -0.72); chassisGroup.add(_turnMeshL)
+  _turnMeshR = new THREE.Mesh(turnGeo, matOrange); _turnMeshR.position.set(1.5, 0.42,  0.72); chassisGroup.add(_turnMeshR)
+  _turnLightL = new THREE.PointLight(0xff8800, 0, 6); _turnLightL.position.set(1.4, 0.4, -0.8); chassisGroup.add(_turnLightL)
+  _turnLightR = new THREE.PointLight(0xff8800, 0, 6); _turnLightR.position.set(1.4, 0.4,  0.8); chassisGroup.add(_turnLightR)
+
+  // Brake/reverse light
+  _brakeMesh  = new THREE.Mesh(tailGeo, matRed); _brakeMesh.position.set(-1.58, 0.52, 0); chassisGroup.add(_brakeMesh)
+  _brakeLight = new THREE.PointLight(0xff0000, 0, 10); _brakeLight.position.set(-1.7, 0.5, 0); chassisGroup.add(_brakeLight)
+}
+
+function tickRoverLights(dt) {
+  if (!_lightsOn) return
+  _turnBlinkT += dt
+  const blink = (_turnBlinkT % 0.7) < 0.35
+  const turningLeft  = !!keys.KeyA
+  const turningRight = !!keys.KeyD
+  const braking = !!keys.KeyS
+
+  if (_turnMeshL) _turnMeshL.material.color.setHex(turningLeft && blink ? 0xff8800 : 0x441100)
+  if (_turnMeshR) _turnMeshR.material.color.setHex(turningRight && blink ? 0xff8800 : 0x441100)
+  if (_turnLightL) _turnLightL.intensity = turningLeft && blink ? 3 : 0
+  if (_turnLightR) _turnLightR.intensity = turningRight && blink ? 3 : 0
+  if (_brakeMesh)  _brakeMesh.material.color.setHex(braking ? 0xff0000 : 0x440000)
+  if (_brakeLight) _brakeLight.intensity = braking ? 5 : 0
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4605,6 +4802,9 @@ function startLaunchPrep() {
   if (hud) hud.style.display = 'block'
   const sm = document.getElementById('launch-prep-samples')
   if (sm) sm.textContent = `SAMPLES ABOARD: ${roverSamples.length}`
+  // v3 — show sky cam viewport
+  const skyVp = document.getElementById('launch-sky-viewport')
+  if (skyVp) skyVp.style.display = 'block'
   // v2 — dim background, spawn tripod legs placeholder
   _setLaunchDimmer(true)
   _spawnTripodLegs()
@@ -4659,46 +4859,66 @@ function cancelLaunchPrep() {
   _setLaunchDimmer(false)
   _despawnTripodLegs()
   if (_launchCountdownTimer) { clearTimeout(_launchCountdownTimer); _launchCountdownTimer = null }
+  _countdownCinemaActive = false
   const cd = document.getElementById('launch-countdown')
   if (cd) cd.style.display = 'none'
+  const skyVp = document.getElementById('launch-sky-viewport')
+  if (skyVp) skyVp.style.display = 'none'
   _refreshLaunchBtn()
   showToast('LAUNCH CANCELLED', '#FF4444', 1200)
   console.log('[PROBE] launch prep cancelled')
 }
 
-// v2 — wraps the original async launchProbe so we get a 5-4-3-2-1 cinematic countdown first
+// v3 — 5-4-3-2-1 cinematic countdown with digital-clock digits + orbiting camera
 function startLaunchCountdown() {
   if (probeState !== 'prep') return
-  // Hide the prep HUD during countdown but keep dimmer + legs
   const hud = document.getElementById('launch-prep-hud')
   if (hud) hud.style.display = 'none'
+  const skyVp = document.getElementById('launch-sky-viewport')
+  if (skyVp) skyVp.style.display = 'none'
   const cd = document.getElementById('launch-countdown')
   if (!cd) { launchProbe(); return }
+  // Start cinematic camera — store current state and begin orbit
+  _countdownCinemaActive = true
+  _cdCamAngle  = Math.atan2(camera.position.z - chassisPos.z, camera.position.x - chassisPos.x)
+  _cdCamHeight = 80
+  _cdCamRadius = 60
   let n = 5
-  cd.style.display = 'block'
-  cd.textContent = n
-  cd.style.color = '#FFB432'
-  cd.style.animation = 'countdownTick 1s ease forwards'
+  function showDigit(num) {
+    // v3 digital-clock style: use CSS text-shadow to simulate lit segments
+    cd.style.display = 'block'
+    cd.textContent = num
+    cd.style.fontFamily = "'Orbitron', 'Share Tech Mono', monospace"
+    cd.style.fontWeight = '900'
+    cd.style.letterSpacing = '0.05em'
+    const colors = { 5: '#00FFE0', 4: '#00FFE0', 3: '#FFB432', 2: '#FF8800', 1: '#FF4444' }
+    const c = colors[num] || '#00FFE0'
+    cd.style.color = c
+    cd.style.textShadow = `0 0 30px ${c}, 0 0 60px ${c}88, 0 0 100px ${c}44`
+    cd.style.animation = 'none'
+    void cd.offsetWidth
+    cd.style.animation = 'countdownTick 1s ease forwards'
+  }
+  showDigit(n)
   const tick = () => {
     n -= 1
     if (n <= 0) {
       cd.textContent = '▲ LAUNCH'
-      cd.style.fontSize = '90px'
+      cd.style.fontFamily = "'Orbitron', 'Share Tech Mono', monospace"
+      cd.style.fontSize = '80px'
       cd.style.color = '#B4FF50'
+      cd.style.textShadow = '0 0 40px #B4FF50, 0 0 80px #B4FF5066'
+      cd.style.animation = 'none'; void cd.offsetWidth
       cd.style.animation = 'countdownTick 0.9s ease forwards'
       setTimeout(() => {
         cd.style.display = 'none'
         cd.style.fontSize = '140px'
+        _countdownCinemaActive = false
         launchProbe()
-      }, 850)
+      }, 900)
       return
     }
-    cd.textContent = n
-    cd.style.color = n <= 2 ? '#FF4444' : (n === 3 ? '#FFB432' : '#00FFE0')
-    // Restart animation
-    cd.style.animation = 'none'
-    void cd.offsetWidth
-    cd.style.animation = 'countdownTick 1s ease forwards'
+    showDigit(n)
     _launchCountdownTimer = setTimeout(tick, 950)
   }
   _launchCountdownTimer = setTimeout(tick, 950)
