@@ -381,19 +381,22 @@ async function init() {
     if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.remove(), 600) }
   }, 300)
 
-  // Auto-restore last saved world (slot 1 if exists)
-  setTimeout(async () => {
+  // Auto-restore last saved world — poll until chassisBody+physics is ready
+  ;(function _autoRestore(attempts) {
+    if (!chassisBody && attempts < 30) { setTimeout(() => _autoRestore(attempts + 1), 200); return }
+    if (!chassisBody) { console.warn('[AutoRestore] chassisBody never ready, skipping'); return }
     const lastSlot = localStorage.getItem('ant-mars-last-slot')
     const slotToLoad = lastSlot || '1'
     const raw = localStorage.getItem('ant-mars-world-' + slotToLoad)
     if (raw) {
       try {
         const data = JSON.parse(raw)
-        await applyWorldData(data)
-        showToast(`✦ WORLD RESTORED · ${data.slotName || 'SLOT ' + slotToLoad}`, '#B4FF50', 2500)
-      } catch(e) { console.warn('[AutoRestore] failed:', e.message) }
+        applyWorldData(data).then(() => {
+          showToast(`✦ WORLD RESTORED · ${data.slotName || 'SLOT ' + slotToLoad}`, '#B4FF50', 2500)
+        }).catch(e => console.warn('[AutoRestore] applyWorldData failed:', e.message))
+      } catch(e) { console.warn('[AutoRestore] parse failed:', e.message) }
     }
-  }, 800)
+  })(0)
 
   // Start loop
   renderer.setAnimationLoop(animate)
@@ -4912,9 +4915,9 @@ function _refreshLaunchBtn() {
     btn.style.color   = active ? '#FFB432' : 'rgba(255,255,255,0.35)'
     btn.style.borderColor = active ? 'rgba(255,180,50,0.6)' : 'rgba(255,255,255,0.12)'
   }
-  // Primary LAUNCH button — above specimens panel, shown only when active
+  // btn-launch-prep hidden — LAUNCH is now in the bottom bar only
   const prep = document.getElementById('btn-launch-prep')
-  if (prep) prep.style.display = active ? 'block' : 'none'
+  if (prep) prep.style.display = 'none'
 }
 
 // ──────── LAUNCH PREP ────────
