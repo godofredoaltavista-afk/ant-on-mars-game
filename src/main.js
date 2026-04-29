@@ -4578,8 +4578,19 @@ function initDrillModule() {
   const hud       = document.getElementById('drill-hud')
   const closeBtn  = document.getElementById('drill-cam-close')
   const holdPrompt = document.getElementById('drill-hold-prompt')
-  // Specimens HUD always visible (not tied to drill panel)
-  if (hud) hud.style.display = 'block'
+  // Specimens HUD always visible from start, always draggable
+  if (hud) {
+    hud.style.display = 'block'
+    if (!hud._drillHudDraggable) {
+      hud._drillHudDraggable = true
+      try { makeDraggable('drill-hud', 'drill-hud-header') } catch(e){}
+    }
+  }
+  // TORNO button also draggable from start
+  if (btnDrill && !btnDrill._drillBtnDraggable) {
+    btnDrill._drillBtnDraggable = true
+    try { makeDraggable('btn-drill', 'btn-drill') } catch(e){}
+  }
 
   function openPanel(open) {
     drillCamOpen = open
@@ -4593,10 +4604,6 @@ function initDrillModule() {
       btnDrill.style.borderColor = open ? 'rgba(0,255,224,0.7)' : 'rgba(255,255,255,0.12)'
     }
     if (open) {
-      if (hud && !hud._drillHudDraggable) {
-        hud._drillHudDraggable = true
-        try { makeDraggable('drill-hud', 'drill-hud-header') } catch(e){}
-      }
       updateDrillHUD()
       showToast('TORNO ON · HOLD [E] TO DRILL', '#00FFE0', 1800)
     } else {
@@ -4869,18 +4876,18 @@ function tickRoverLights(dt) {
 
 // ──────── Helpers ────────
 function _refreshLaunchBtn() {
-  // Bottom-bar launch button — always visible; active when samples ≥ 1 and idle
-  const btn = document.getElementById('btn-launch-specimens')
   const active = roverSamples.length >= 1 && probeState === 'idle'
+  // Bottom-bar launch button — secondary, always visible
+  const btn = document.getElementById('btn-launch-specimens')
   if (btn) {
     btn.style.opacity = active ? '1' : '0.35'
     btn.style.cursor  = active ? 'pointer' : 'default'
     btn.style.color   = active ? '#FFB432' : 'rgba(255,255,255,0.35)'
     btn.style.borderColor = active ? 'rgba(255,180,50,0.6)' : 'rgba(255,255,255,0.12)'
   }
-  // Also update old btn-launch-prep (hidden, kept for compat)
-  const old = document.getElementById('btn-launch-prep')
-  if (old) old.style.display = 'none'
+  // Primary LAUNCH button — above specimens panel, shown only when active
+  const prep = document.getElementById('btn-launch-prep')
+  if (prep) prep.style.display = active ? 'block' : 'none'
 }
 
 // ──────── LAUNCH PREP ────────
@@ -5213,27 +5220,32 @@ function tickProbe(dt) {
   const thrustY = (3.72 * 1.55 + age * 0.48) * pm   // starts just above gravity, grows with time
   const wobble  = altitude < 22 ? (Math.random() - 0.5) * pm * 1.6 : 0  // wobbly first 22m
   probeBody.applyImpulse({ x: wobble * dt, y: thrustY * dt, z: wobble * 0.7 * dt }, true)
-  // Update altitude marker on the bar
+  // Update altitude marker + moving arrow on the bar
   const wrap = document.getElementById('probe-altitude-wrap')
   const marker = document.getElementById('probe-alt-marker')
+  const altArrow = document.getElementById('probe-alt-arrow')
   if (wrap && marker) {
     const range = PROBE_EJECT_MAX_ALT * 1.4
     const pct = THREE.MathUtils.clamp(altitude / range, 0, 1)
     marker.style.bottom = (pct * 100) + '%'
+    if (altArrow) altArrow.style.bottom = 'calc(' + (pct * 100) + '% - 7px)'
   }
   // Status text
   const status = document.getElementById('probe-cam-status')
   if (status) status.textContent = `ALT: ${altitude.toFixed(0)}m`
-  // Eject window state
+  // Eject window state + hint text
   const ejectBtn = document.getElementById('btn-eject-capsule')
+  const ejectHint = document.getElementById('probe-eject-hint')
   const inWindow = altitude >= PROBE_EJECT_MIN_ALT && altitude <= PROBE_EJECT_MAX_ALT
   if (inWindow && probeState === 'flying') {
     probeState = 'eject_window'
     if (ejectBtn) ejectBtn.style.display = 'block'
+    if (ejectHint) ejectHint.style.display = 'block'
     showToast('◉ EJECT WINDOW · CLICK NOW', '#00FFE0', 1800)
   } else if (!inWindow && probeState === 'eject_window' && altitude > PROBE_EJECT_MAX_ALT) {
     // Missed the window
     if (ejectBtn) ejectBtn.style.display = 'none'
+    if (ejectHint) ejectHint.style.display = 'none'
     _missedEjectWindow()
     return
   }
@@ -5434,9 +5446,11 @@ function ejectCapsule() {
       )
       capsuleMesh.add(fb)
     })
-  // Hide eject button, free probe (let it drift away)
+  // Hide eject button + hint
   const ejectBtn = document.getElementById('btn-eject-capsule')
   if (ejectBtn) ejectBtn.style.display = 'none'
+  const ejectHint = document.getElementById('probe-eject-hint')
+  if (ejectHint) ejectHint.style.display = 'none'
   // Open capsule chase cam (closes the probe panel)
   const panel = document.getElementById('probe-cam-panel')
   if (panel) panel.style.display = 'none'
@@ -5452,7 +5466,10 @@ function ejectCapsule() {
   probeState = 'capsule_flying'
   _capsuleStart = performance.now()
   _createCapsHudLine()
-  showToast('◉ CAPSULE EJECTED · STEER WITH A/D', '#00FFE0', 1800)
+  // Show flight timer above capsule cam panel
+  const fTimer = document.getElementById('return-countdown')
+  if (fTimer) { fTimer.style.display = 'block'; fTimer.textContent = CAPSULE_TIMEOUT + 's'; fTimer.style.color = '#00FFE0' }
+  showToast('◉ ANT EJECTED · STEER WITH MOUSE · REACH SAT_SLOT', '#00FFE0', 2000)
 }
 
 // v2 — mouse-aimed steering. Capsule cruises forward at constant speed; mouse displacement
@@ -5488,6 +5505,15 @@ function tickCapsule(dt) {
   if (speed > 0.01) {
     const k = CAPSULE_SPEED / speed
     capsuleBody.setLinvel({ x: cur.x*k, y: cur.y*k, z: cur.z*k }, true)
+  }
+  // Flight timer — shows remaining seconds above capsule cam panel
+  const elapsed = (performance.now() - _capsuleStart) / 1000
+  const remaining = Math.max(0, CAPSULE_TIMEOUT - elapsed)
+  const fTimer = document.getElementById('return-countdown')
+  if (fTimer) {
+    fTimer.textContent = remaining.toFixed(1) + 's'
+    fTimer.style.color = remaining < 5 ? '#FF4444' : remaining < 10 ? '#FFB432' : '#00FFE0'
+    fTimer.style.textShadow = remaining < 5 ? '0 0 24px #FF4444' : '0 0 24px #00FFE0'
   }
   // 3D HUD line from capsule to satellite
   if (_capsHudLine && capsuleMesh) {
@@ -5575,9 +5601,11 @@ function _onSatSlotCapture() {
   if (_capsHudLine) { scene.remove(_capsHudLine); _capsHudLine.geometry.dispose(); _capsHudLine.material.dispose(); _capsHudLine = null }
   _cleanupProbe()
   _cleanupSatSlot()
-  // Hide capsule cam
+  // Hide capsule cam + flight timer
   const cpanel = document.getElementById('capsule-cam-panel')
   if (cpanel) cpanel.style.display = 'none'
+  const fTimer = document.getElementById('return-countdown')
+  if (fTimer) fTimer.style.display = 'none'
   // Reset state
   roverSamples = []
   probeSamples = []
@@ -5586,8 +5614,8 @@ function _onSatSlotCapture() {
   probeState = 'idle'
   roverAnchored = false
   _refreshLaunchBtn()
-  // Return countdown → Nice job modal
-  _showReturnCountdown(samplesDelivered, samplesData)
+  // Go directly to Nice Job modal
+  _showNiceJobModal(samplesDelivered, samplesData)
 }
 
 function _missionFailed() {
@@ -5598,6 +5626,8 @@ function _missionFailed() {
   _cleanupSatSlot()
   const cpanel = document.getElementById('capsule-cam-panel')
   if (cpanel) cpanel.style.display = 'none'
+  const fTimerFail = document.getElementById('return-countdown')
+  if (fTimerFail) fTimerFail.style.display = 'none'
   // Samples are lost
   roverSamples = []
   probeSamples = []
@@ -5647,29 +5677,7 @@ function _createCapsHudLine() {
 
 // ──────── RETURN COUNTDOWN + NICE JOB MODAL ────────
 function _showReturnCountdown(samplesDelivered, samplesData) {
-  const cd = document.getElementById('return-countdown')
-  if (!cd) { _showNiceJobModal(samplesDelivered, samplesData); return }
-  let secs = 600
-  function fmt(s) {
-    const m = Math.floor(s / 60), sec = s % 60
-    return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0')
-  }
-  cd.style.display = 'block'
-  cd.textContent = fmt(secs)
-  const iv = setInterval(() => {
-    secs -= 1
-    if (secs <= 1) {
-      clearInterval(iv)
-      cd.textContent = '00:01'
-      cd.style.animation = 'none'; void cd.offsetWidth
-      cd.style.animation = 'returnCountdownTick 0.12s ease forwards'
-      setTimeout(() => { cd.style.display = 'none'; _showNiceJobModal(samplesDelivered, samplesData) }, 350)
-      return
-    }
-    cd.textContent = fmt(secs)
-    cd.style.animation = 'none'; void cd.offsetWidth
-    cd.style.animation = 'returnCountdownTick 0.09s ease forwards'
-  }, 100)
+  _showNiceJobModal(samplesDelivered, samplesData)
 }
 
 function _showNiceJobModal(samplesDelivered, samplesData) {
