@@ -269,6 +269,7 @@ let _brakeMesh = null, _brakeLight = null
 let _turnBlinkT = 0
 // Night mode
 let _nightMode = false
+let _ingenuitySpinAngle = 0             // Y-spin accumulator for the drone model
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INIT
@@ -5119,37 +5120,32 @@ async function launchProbe() {
   probeBody = physicsWorld.createRigidBody(bodyDesc)
   const colDesc = RAPIER.ColliderDesc.cylinder(0.7, 0.35).setMass(2.0).setRestitution(0)
   physicsWorld.createCollider(colDesc, probeBody)
-  // Visual rocket placeholder (cone + cylinder + fins)
+  // Visual — Ingenuity drone GLB
   probeMesh = new THREE.Group()
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.35, 0.35, 1.4, 16),
-    new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.5, roughness: 0.4 })
-  )
-  body.castShadow = true
-  const tip = new THREE.Mesh(
-    new THREE.ConeGeometry(0.35, 0.6, 16),
-    new THREE.MeshStandardMaterial({ color: 0xff4444, metalness: 0.4, roughness: 0.5 })
-  )
-  tip.position.y = 1.0
-  // Three small fins
-  const finMat = new THREE.MeshStandardMaterial({ color: 0xffb432, metalness: 0.3, roughness: 0.6 })
-  for (let i = 0; i < 3; i++) {
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.4, 0.4), finMat)
-    fin.position.y = -0.6
-    fin.position.x = Math.cos(i * Math.PI * 2 / 3) * 0.4
-    fin.position.z = Math.sin(i * Math.PI * 2 / 3) * 0.4
-    probeMesh.add(fin)
-  }
-  // Exhaust glow
-  const glow = new THREE.Mesh(
-    new THREE.SphereGeometry(0.4, 12, 8),
-    new THREE.MeshBasicMaterial({ color: 0xff8844, transparent: true, opacity: 0.8 })
-  )
-  glow.position.y = -0.9
-  glow.scale.set(1, 1.6, 1)
-  probeMesh.add(glow)
-  probeMesh.add(body, tip)
+  _ingenuitySpinAngle = 0
   scene.add(probeMesh)
+  new Promise((res, rej) => gltfLoader.load(`${GLB_CDN_BASE}/Ingenuity Mars Helicopter.glb`, res, null, rej))
+    .then(gltf => {
+      const model = gltf.scene
+      const box = new THREE.Box3().setFromObject(model)
+      const size = new THREE.Vector3()
+      box.getSize(size)
+      const maxDim = Math.max(size.x, size.y, size.z)
+      model.scale.setScalar(2.5 / Math.max(maxDim, 0.01))
+      box.setFromObject(model)
+      const center = new THREE.Vector3()
+      box.getCenter(center)
+      model.position.sub(center)
+      model.traverse(c => { if (c.isMesh) c.castShadow = true })
+      probeMesh.add(model)
+    })
+    .catch(() => {
+      const fb = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 0.3, 1),
+        new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.5 })
+      )
+      probeMesh.add(fb)
+    })
   // Initial impulse — perpendicular to ground (world Y)
   const mass = probeBody.mass()
   probeBody.applyImpulse({ x: 0, y: PROBE_LAUNCH_IMPULSE * mass, z: 0 }, true)
@@ -5191,7 +5187,8 @@ function tickProbe(dt) {
   const p = probeBody.translation()
   const r = probeBody.rotation()
   probeMesh.position.set(p.x, p.y, p.z)
-  probeMesh.quaternion.set(r.x, r.y, r.z, r.w)
+  _ingenuitySpinAngle += dt * 22
+  probeMesh.rotation.set(0, _ingenuitySpinAngle, 0)
   // Player rotates orbit angle with A/D (don't conflict with steering — steering only matters when grounded)
   if (keys.KeyA) probeOrbitAngle -= dt * 1.6
   if (keys.KeyD) probeOrbitAngle += dt * 1.6
