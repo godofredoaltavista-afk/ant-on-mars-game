@@ -213,8 +213,8 @@ let probeLaunchPos = null                // where the rocket left from (rover sp
 let _probeLaunchTime = 0                 // performance.now() at launch
 const PROBE_LAUNCH_IMPULSE = 6           // small initial kick — continuous thrust takes over
 const PROBE_GRAVITY_SCALE = -0.025       // gentler continuous propulsion (longer flight)
-const PROBE_EJECT_MIN_ALT = 137          // +30% higher — probe climbs slowly so takes longer
-const PROBE_EJECT_MAX_ALT = 163          // +30% window ceiling
+const PROBE_EJECT_MIN_ALT = 55           // eject window start — visible with hint + eject button
+const PROBE_EJECT_MAX_ALT = 90           // eject window ceiling
 const PROBE_MAX_FLIGHT_TIME = 75         // more time since ascent is slower
 
 // Capsule (Capa 4)
@@ -1285,12 +1285,27 @@ function setupUI() {
   // Auto-refresh load buttons to show saved world names on startup
   s9RefreshLoadBtns()
 
-  // Open both views on startup + apply initial mode colors to all HUD elements
+  // Open both views on startup with pixel-perfect default layout
   setTimeout(() => {
     const mmPanel = document.getElementById('minimap-panel')
     const rvPanel = document.getElementById('right-view-panel')
-    if (mmPanel) { mmPanel.style.width = '320px'; mmPanel.style.height = '320px' }
-    if (rvPanel) { rvPanel.style.width = '320px'; rvPanel.style.height = '320px' }
+    // RIGHT VIEW — wide horizontal band at top
+    if (rvPanel) {
+      rvPanel.style.top    = '8px'
+      rvPanel.style.left   = '185px'
+      rvPanel.style.right  = 'auto'
+      rvPanel.style.width  = Math.round(window.innerWidth * 0.57) + 'px'
+      rvPanel.style.height = Math.round(window.innerHeight * 0.18) + 'px'
+    }
+    // TOP VIEW — tall panel on right side
+    if (mmPanel) {
+      const mmW = Math.round(window.innerWidth * 0.27)
+      mmPanel.style.top    = '8px'
+      mmPanel.style.left   = (window.innerWidth - mmW - 8) + 'px'
+      mmPanel.style.right  = 'auto'
+      mmPanel.style.width  = mmW + 'px'
+      mmPanel.style.height = Math.round(window.innerHeight * 0.52) + 'px'
+    }
     openViews(true)
     // Force a full mode-color pass so all HUD elements get the correct color from frame 1
     setDriveMode(vehicleMode)
@@ -4490,14 +4505,12 @@ const _drillCamFwd = new THREE.Vector3()
 const _drillCamUp  = new THREE.Vector3()
 const _drillCamPos = new THREE.Vector3()
 const _drillLookAt = new THREE.Vector3()
-// v3 — FLOOR cam: fisheye B&W, left panel of split layout
+// v3 — FLOOR cam: fisheye B&W, floating draggable panel
 function renderFloorCamScissor() {
   if (!chassisBody) return
   const panel = document.getElementById('drill-floor-panel')
-  if (!panel) return
-  const wrap = document.getElementById('drill-split-wrap')
-  if (!wrap || wrap.style.display === 'none') return
-  if (!drillFloorCamera) drillFloorCamera = new THREE.PerspectiveCamera(170, 1, 0.05, 150)
+  if (!panel || panel.style.display === 'none') return
+  if (!drillFloorCamera) drillFloorCamera = new THREE.PerspectiveCamera(182, 1, 0.05, 150)
   const rect = panel.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return
 
@@ -4529,24 +4542,19 @@ function renderFloorCamScissor() {
   }
 }
 
-// v3 FRONT cam: now always renders into #drill-front-panel (right half of split)
+// v3 FRONT cam: floating draggable panel
 function renderDrillCamScissor() {
   if (!chassisBody) return
-  // Use the right-half front panel in the split layout
-  const panel = document.getElementById('drill-front-panel') || document.getElementById('drill-cam-panel')
-  if (!panel) return
-  const wrap = document.getElementById('drill-split-wrap')
-  // If split wrap exists but hidden, bail out
-  if (wrap && wrap.style.display === 'none') return
-  if (!wrap && panel.style.display === 'none') return
-  if (!drillCamera) drillCamera = new THREE.PerspectiveCamera(130, 1, 0.1, 300)
+  const panel = document.getElementById('drill-front-panel')
+  if (!panel || panel.style.display === 'none') return
+  if (!drillCamera) drillCamera = new THREE.PerspectiveCamera(148, 1, 0.1, 300)
   const rect = panel.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return
 
   const up  = new THREE.Vector3(0, 1, 0).applyQuaternion(chassisQuat)
   const fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisQuat)
   // FRONT cam: always 130° over the hood, slightly angled down
-  drillCamera.fov = 130
+  drillCamera.fov = 148
   _drillCamPos.copy(chassisPos).addScaledVector(fwd, 1.2).addScaledVector(up, 0.6)
   _drillLookAt.copy(chassisPos).addScaledVector(fwd, 8).addScaledVector(up, -0.8)
 
@@ -4591,12 +4599,31 @@ function initDrillModule() {
     btnDrill._drillBtnDraggable = true
     try { makeDraggable('btn-drill', 'btn-drill') } catch(e){}
   }
+  // TORNO camera panels — drag + resize init
+  const floorPanelEl = document.getElementById('drill-floor-panel')
+  const frontPanelEl = document.getElementById('drill-front-panel')
+  const floorResizeEl = document.getElementById('drill-floor-resize')
+  const frontResizeEl = document.getElementById('drill-front-resize')
+  if (floorPanelEl && !floorPanelEl._drillFloorDrag) {
+    floorPanelEl._drillFloorDrag = true
+    try { makeDraggable('drill-floor-panel', 'drill-floor-header') } catch(e){}
+    try { attachResizeHandle(floorPanelEl, floorResizeEl, 'left') } catch(e){}
+    const floorClose = document.getElementById('drill-floor-close')
+    if (floorClose) floorClose.addEventListener('click', () => openPanel(false))
+  }
+  if (frontPanelEl && !frontPanelEl._drillFrontDrag) {
+    frontPanelEl._drillFrontDrag = true
+    try { makeDraggable('drill-front-panel', 'drill-front-header') } catch(e){}
+    try { attachResizeHandle(frontPanelEl, frontResizeEl, 'left') } catch(e){}
+  }
 
   function openPanel(open) {
     drillCamOpen = open
-    if (splitWrap) splitWrap.style.display = open ? 'flex' : 'none'
-    if (panel)     panel.style.display     = 'none'
-    // HUD stays visible always
+    const floorPanel = document.getElementById('drill-floor-panel')
+    const frontPanel = document.getElementById('drill-front-panel')
+    if (floorPanel) floorPanel.style.display = open ? 'block' : 'none'
+    if (frontPanel) frontPanel.style.display = open ? 'block' : 'none'
+    if (panel)      panel.style.display      = 'none'
     if (holdPrompt) holdPrompt.style.display = open ? 'block' : 'none'
     if (btnDrill) {
       btnDrill.style.background  = open ? 'rgba(0,255,224,0.18)' : 'rgba(0,0,0,0.82)'
