@@ -5122,17 +5122,18 @@ async function launchProbe() {
   probeBody = physicsWorld.createRigidBody(bodyDesc)
   const colDesc = RAPIER.ColliderDesc.cylinder(0.7, 0.35).setMass(2.0).setRestitution(0)
   physicsWorld.createCollider(colDesc, probeBody)
-  // Visual — Mecha Ant GLB, oriented facing toward satellite (forward direction)
+  // Visual — Ingenuity drone GLB, spinning fast on Y like a drone
   probeMesh = new THREE.Group()
+  _ingenuitySpinAngle = 0
   scene.add(probeMesh)
-  new Promise((res, rej) => gltfLoader.load(`${GLB_CDN_BASE}/Meshy_AI_Mecha_Ant_0410023659_texture.glb`, res, null, rej))
+  new Promise((res, rej) => gltfLoader.load(`${GLB_CDN_BASE}/Ingenuity Mars Helicopter.glb`, res, null, rej))
     .then(gltf => {
       const model = gltf.scene
       const box = new THREE.Box3().setFromObject(model)
       const size = new THREE.Vector3()
       box.getSize(size)
       const maxDim = Math.max(size.x, size.y, size.z)
-      model.scale.setScalar(3.0 / Math.max(maxDim, 0.01))
+      model.scale.setScalar(2.5 / Math.max(maxDim, 0.01))
       box.setFromObject(model)
       const center = new THREE.Vector3()
       box.getCenter(center)
@@ -5142,8 +5143,8 @@ async function launchProbe() {
     })
     .catch(() => {
       const fb = new THREE.Mesh(
-        new THREE.BoxGeometry(1, 0.6, 1),
-        new THREE.MeshStandardMaterial({ color: 0x994422, metalness: 0.6 })
+        new THREE.BoxGeometry(1, 0.3, 1),
+        new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.5 })
       )
       probeMesh.add(fb)
     })
@@ -5190,14 +5191,8 @@ function tickProbe(dt) {
   const p = probeBody.translation()
   const r = probeBody.rotation()
   probeMesh.position.set(p.x, p.y, p.z)
-  // Orient ant toward satellite (horizontal) + slight forward tilt
-  const toSatX = satSlotPos.x - p.x
-  const toSatZ = satSlotPos.z - p.z
-  const faceY = Math.atan2(toSatX, toSatZ)
-  probeMesh.rotation.set(0.18, faceY, 0)
-  // Update probe heading display in HUD
-  const hdgEl = document.getElementById('probe-tel-heading')
-  if (hdgEl) hdgEl.textContent = `HDG · ${((faceY * 180 / Math.PI + 360) % 360).toFixed(0)}°`
+  _ingenuitySpinAngle += dt * 22
+  probeMesh.rotation.set(0, _ingenuitySpinAngle, 0)
   // Animate 3D HUD rings
   if (_probeHudRings.length >= 3) {
     _probeHudRings[0].position.copy(probeMesh.position)
@@ -5414,30 +5409,31 @@ function ejectCapsule() {
   physicsWorld.createCollider(cd, capsuleBody)
   capsuleVelocity.copy(dir).multiplyScalar(CAPSULE_SPEED)
   capsuleBody.setLinvel({ x: capsuleVelocity.x, y: capsuleVelocity.y, z: capsuleVelocity.z }, true)
-  // Visual capsule — sphere with biome-color sample window
+  // Visual capsule — Mecha Ant GLB, oriented facing the satellite direction
   capsuleMesh = new THREE.Group()
-  const shell = new THREE.Mesh(
-    new THREE.SphereGeometry(0.45, 18, 12),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.6, roughness: 0.3 })
-  )
-  capsuleMesh.add(shell)
-  // Color band reflecting the first sample
-  if (probeSamples[0]) {
-    const band = new THREE.Mesh(
-      new THREE.TorusGeometry(0.46, 0.08, 8, 24),
-      new THREE.MeshBasicMaterial({ color: probeSamples[0].colors[0] })
-    )
-    capsuleMesh.add(band)
-  }
-  // Trail
-  const trail = new THREE.Mesh(
-    new THREE.ConeGeometry(0.3, 0.9, 12),
-    new THREE.MeshBasicMaterial({ color: 0x00ffe0, transparent: true, opacity: 0.7 })
-  )
-  trail.rotation.z = Math.PI / 2
-  trail.position.x = -0.6
-  capsuleMesh.add(trail)
   scene.add(capsuleMesh)
+  new Promise((res, rej) => gltfLoader.load(`${GLB_CDN_BASE}/Meshy_AI_Mecha_Ant_0410023659_texture.glb`, res, null, rej))
+    .then(gltf => {
+      const model = gltf.scene
+      const box = new THREE.Box3().setFromObject(model)
+      const size = new THREE.Vector3()
+      box.getSize(size)
+      const maxDim = Math.max(size.x, size.y, size.z)
+      model.scale.setScalar(2.2 / Math.max(maxDim, 0.01))
+      box.setFromObject(model)
+      const center = new THREE.Vector3()
+      box.getCenter(center)
+      model.position.sub(center)
+      model.traverse(c => { if (c.isMesh) c.castShadow = true })
+      capsuleMesh.add(model)
+    })
+    .catch(() => {
+      const fb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.45, 14, 10),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.6, roughness: 0.3 })
+      )
+      capsuleMesh.add(fb)
+    })
   // Hide eject button, free probe (let it drift away)
   const ejectBtn = document.getElementById('btn-eject-capsule')
   if (ejectBtn) ejectBtn.style.display = 'none'
@@ -5466,7 +5462,10 @@ function tickCapsule(dt) {
   const p = capsuleBody.translation()
   const r = capsuleBody.rotation()
   capsuleMesh.position.set(p.x, p.y, p.z)
-  capsuleMesh.quaternion.set(r.x, r.y, r.z, r.w)
+  // Orient ant to face the satellite (forward direction), keep it upright
+  const _antToSatX = satSlotPos.x - p.x
+  const _antToSatZ = satSlotPos.z - p.z
+  capsuleMesh.rotation.set(0.18, Math.atan2(_antToSatX, _antToSatZ), 0)
   // Compute steering vector based on mouse position (panel-relative, -1..1)
   const v = capsuleBody.linvel()
   const horiz = new THREE.Vector3(v.x, 0, v.z); horiz.normalize()
