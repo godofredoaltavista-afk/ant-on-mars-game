@@ -269,7 +269,9 @@ let _brakeMesh = null, _brakeLight = null
 let _turnBlinkT = 0
 // Night mode
 let _nightMode = false
-let _ingenuitySpinAngle = 0             // Y-spin accumulator for the drone model
+let _ingenuitySpinAngle = 0             // legacy — no longer used for spin, kept for cleanup safety
+let _probeHudRings = []                 // 3D orbital rings around probe (HUD)
+let _capsHudLine = null                 // 3D targeting line capsule → satellite (HUD)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INIT
@@ -5120,18 +5122,17 @@ async function launchProbe() {
   probeBody = physicsWorld.createRigidBody(bodyDesc)
   const colDesc = RAPIER.ColliderDesc.cylinder(0.7, 0.35).setMass(2.0).setRestitution(0)
   physicsWorld.createCollider(colDesc, probeBody)
-  // Visual — Ingenuity drone GLB
+  // Visual — Mecha Ant GLB, oriented facing toward satellite (forward direction)
   probeMesh = new THREE.Group()
-  _ingenuitySpinAngle = 0
   scene.add(probeMesh)
-  new Promise((res, rej) => gltfLoader.load(`${GLB_CDN_BASE}/Ingenuity Mars Helicopter.glb`, res, null, rej))
+  new Promise((res, rej) => gltfLoader.load(`${GLB_CDN_BASE}/Meshy_AI_Mecha_Ant_0410023659_texture.glb`, res, null, rej))
     .then(gltf => {
       const model = gltf.scene
       const box = new THREE.Box3().setFromObject(model)
       const size = new THREE.Vector3()
       box.getSize(size)
       const maxDim = Math.max(size.x, size.y, size.z)
-      model.scale.setScalar(2.5 / Math.max(maxDim, 0.01))
+      model.scale.setScalar(3.0 / Math.max(maxDim, 0.01))
       box.setFromObject(model)
       const center = new THREE.Vector3()
       box.getCenter(center)
@@ -5141,11 +5142,13 @@ async function launchProbe() {
     })
     .catch(() => {
       const fb = new THREE.Mesh(
-        new THREE.BoxGeometry(1, 0.3, 1),
-        new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.5 })
+        new THREE.BoxGeometry(1, 0.6, 1),
+        new THREE.MeshStandardMaterial({ color: 0x994422, metalness: 0.6 })
       )
       probeMesh.add(fb)
     })
+  // 3D HUD orbital rings around probe — visible in probe cam scissor
+  _createProbeHudRings()
   // Initial impulse — perpendicular to ground (world Y)
   const mass = probeBody.mass()
   probeBody.applyImpulse({ x: 0, y: PROBE_LAUNCH_IMPULSE * mass, z: 0 }, true)
@@ -5187,8 +5190,23 @@ function tickProbe(dt) {
   const p = probeBody.translation()
   const r = probeBody.rotation()
   probeMesh.position.set(p.x, p.y, p.z)
-  _ingenuitySpinAngle += dt * 22
-  probeMesh.rotation.set(0, _ingenuitySpinAngle, 0)
+  // Orient ant toward satellite (horizontal) + slight forward tilt
+  const toSatX = satSlotPos.x - p.x
+  const toSatZ = satSlotPos.z - p.z
+  const faceY = Math.atan2(toSatX, toSatZ)
+  probeMesh.rotation.set(0.18, faceY, 0)
+  // Update probe heading display in HUD
+  const hdgEl = document.getElementById('probe-tel-heading')
+  if (hdgEl) hdgEl.textContent = `HDG · ${((faceY * 180 / Math.PI + 360) % 360).toFixed(0)}°`
+  // Animate 3D HUD rings
+  if (_probeHudRings.length >= 3) {
+    _probeHudRings[0].position.copy(probeMesh.position)
+    _probeHudRings[0].rotation.z += dt * 0.6
+    _probeHudRings[1].position.copy(probeMesh.position)
+    _probeHudRings[1].rotation.y += dt * -0.45
+    _probeHudRings[2].position.copy(probeMesh.position)
+    _probeHudRings[2].rotation.x += dt * 0.3
+  }
   // Player rotates orbit angle with A/D (don't conflict with steering — steering only matters when grounded)
   if (keys.KeyA) probeOrbitAngle -= dt * 1.6
   if (keys.KeyD) probeOrbitAngle += dt * 1.6
@@ -5250,6 +5268,7 @@ function _cleanupProbe() {
   if (ejectBtn) ejectBtn.style.display = 'none'
   if (probeMesh) { scene.remove(probeMesh); probeMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); probeMesh = null }
   if (probeBody) { try { physicsWorld.removeRigidBody(probeBody) } catch(e){}; probeBody = null }
+  _cleanupProbeHudRings()
   const panel = document.getElementById('probe-cam-panel')
   if (panel) panel.style.display = 'none'
   // v2 — clean up dimmer + tripod placeholder when leaving the launch flow
@@ -5296,27 +5315,56 @@ function renderProbeCamScissor() {
 // ──────── SAT_SLOT (Capa 4 capture target) ────────
 function _spawnSatSlot() {
   if (satSlotMesh) { scene.remove(satSlotMesh); satSlotMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); satSlotMesh = null }
-  // Position on a horizontal orbit around the launch point
   _satSlotAngle = Math.random() * Math.PI * 2
-  _satSlotBaseY = probeLaunchPos.y + SAT_SLOT_ALTITUDE_OFFSET  // temp; overridden at eject
+  _satSlotBaseY = probeLaunchPos.y + SAT_SLOT_ALTITUDE_OFFSET
   satSlotPos.set(
     probeLaunchPos.x + Math.cos(_satSlotAngle) * SAT_SLOT_ORBITAL_RADIUS,
     _satSlotBaseY,
     probeLaunchPos.z + Math.sin(_satSlotAngle) * SAT_SLOT_ORBITAL_RADIUS
   )
   satSlotMesh = new THREE.Group()
-  const torus = new THREE.Mesh(
-    new THREE.TorusGeometry(4, 0.6, 12, 32),
-    new THREE.MeshStandardMaterial({ color: 0x00ffe0, emissive: 0x008866, emissiveIntensity: 0.6, metalness: 0.6, roughness: 0.3 })
+  // Load La Bombonera GLB as the satellite
+  new Promise((res, rej) => gltfLoader.load(`${GLB_CDN_BASE}/la.bombonera.meshy.glb`, res, null, rej))
+    .then(gltf => {
+      const model = gltf.scene
+      const box = new THREE.Box3().setFromObject(model)
+      const size = new THREE.Vector3()
+      box.getSize(size)
+      const maxDim = Math.max(size.x, size.y, size.z)
+      model.scale.setScalar(14 / Math.max(maxDim, 0.01))
+      box.setFromObject(model)
+      const center = new THREE.Vector3()
+      box.getCenter(center)
+      model.position.sub(center)
+      model.traverse(c => {
+        if (c.isMesh) {
+          c.castShadow = true
+          if (c.material && !Array.isArray(c.material)) {
+            c.material.emissive = new THREE.Color(0x001a0a)
+            c.material.emissiveIntensity = 0.3
+          }
+        }
+      })
+      satSlotMesh.add(model)
+    })
+    .catch(() => {
+      // Fallback: classic torus + beacon
+      const torus = new THREE.Mesh(
+        new THREE.TorusGeometry(4, 0.6, 12, 32),
+        new THREE.MeshStandardMaterial({ color: 0x00ffe0, emissive: 0x008866, emissiveIntensity: 0.6, metalness: 0.6, roughness: 0.3 })
+      )
+      torus.rotation.x = Math.PI / 2
+      satSlotMesh.add(torus)
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 12), new THREE.MeshBasicMaterial({ color: 0xb4ff50 }))
+      satSlotMesh.add(beacon)
+    })
+  // Capture ring indicator (always visible, marks the hitbox)
+  const capRing = new THREE.Mesh(
+    new THREE.TorusGeometry(SAT_SLOT_CAPTURE_RADIUS * 0.75, 0.25, 8, 32),
+    new THREE.MeshBasicMaterial({ color: 0x00ffe0, transparent: true, opacity: 0.45 })
   )
-  torus.rotation.x = Math.PI / 2
-  satSlotMesh.add(torus)
-  // Center beacon
-  const beacon = new THREE.Mesh(
-    new THREE.SphereGeometry(0.8, 16, 12),
-    new THREE.MeshBasicMaterial({ color: 0xb4ff50 })
-  )
-  satSlotMesh.add(beacon)
+  capRing.rotation.x = Math.PI / 2
+  satSlotMesh.add(capRing)
   satSlotMesh.position.copy(satSlotPos)
   scene.add(satSlotMesh)
   console.log('[SAT_SLOT] spawned at', satSlotPos.toArray())
@@ -5402,10 +5450,12 @@ function ejectCapsule() {
     if (!cpanel._capsInitialized) {
       cpanel._capsInitialized = true
       try { makeDraggable('capsule-cam-panel', 'capsule-cam-label') } catch(e){}
+      try { attachResizeHandle(cpanel, document.getElementById('capsule-cam-resize-handle'), 'left') } catch(e){}
     }
   }
   probeState = 'capsule_flying'
   _capsuleStart = performance.now()
+  _createCapsHudLine()
   showToast('◉ CAPSULE EJECTED · STEER WITH A/D', '#00FFE0', 1800)
 }
 
@@ -5439,6 +5489,13 @@ function tickCapsule(dt) {
   if (speed > 0.01) {
     const k = CAPSULE_SPEED / speed
     capsuleBody.setLinvel({ x: cur.x*k, y: cur.y*k, z: cur.z*k }, true)
+  }
+  // 3D HUD line from capsule to satellite
+  if (_capsHudLine && capsuleMesh) {
+    const pa = _capsHudLine.geometry.attributes.position.array
+    pa[0] = capsuleMesh.position.x; pa[1] = capsuleMesh.position.y; pa[2] = capsuleMesh.position.z
+    pa[3] = satSlotPos.x; pa[4] = satSlotPos.y; pa[5] = satSlotPos.z
+    _capsHudLine.geometry.attributes.position.needsUpdate = true
   }
   // Distance + telemetry
   const dx = satSlotPos.x - p.x, dy = satSlotPos.y - p.y, dz = satSlotPos.z - p.z
@@ -5511,20 +5568,15 @@ function renderCapsuleCamScissor() {
 
 function _onSatSlotCapture() {
   console.log('[SAT_SLOT] CAPTURE! samples:', probeSamples.length)
+  const samplesDelivered = probeSamples.length
+  const samplesData = probeSamples.slice()
   // Cleanup capsule + probe
   if (capsuleMesh) { scene.remove(capsuleMesh); capsuleMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); capsuleMesh = null }
   if (capsuleBody) { try { physicsWorld.removeRigidBody(capsuleBody) } catch(e){}; capsuleBody = null }
+  if (_capsHudLine) { scene.remove(_capsHudLine); _capsHudLine.geometry.dispose(); _capsHudLine.material.dispose(); _capsHudLine = null }
   _cleanupProbe()
   _cleanupSatSlot()
-  // Banner
-  const banner = document.getElementById('mission-complete-banner')
-  const detail = document.getElementById('mission-complete-detail')
-  if (detail) detail.textContent = `${probeSamples.length} SAMPLE${probeSamples.length === 1 ? '' : 'S'} DELIVERED TO ORBIT`
-  if (banner) {
-    banner.style.display = 'block'
-    setTimeout(() => { banner.style.display = 'none' }, 4500)
-  }
-  // Hide capsule cam, return to rover
+  // Hide capsule cam
   const cpanel = document.getElementById('capsule-cam-panel')
   if (cpanel) cpanel.style.display = 'none'
   // Reset state
@@ -5535,12 +5587,14 @@ function _onSatSlotCapture() {
   probeState = 'idle'
   roverAnchored = false
   _refreshLaunchBtn()
-  showToast('✦ MISSION COMPLETE · BACK TO ROVER', '#B4FF50', 2500)
+  // Return countdown → Nice job modal
+  _showReturnCountdown(samplesDelivered, samplesData)
 }
 
 function _missionFailed() {
   if (capsuleMesh) { scene.remove(capsuleMesh); capsuleMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); capsuleMesh = null }
   if (capsuleBody) { try { physicsWorld.removeRigidBody(capsuleBody) } catch(e){}; capsuleBody = null }
+  if (_capsHudLine) { scene.remove(_capsHudLine); _capsHudLine.geometry.dispose(); _capsHudLine.material.dispose(); _capsHudLine = null }
   _cleanupProbe()
   _cleanupSatSlot()
   const cpanel = document.getElementById('capsule-cam-panel')
@@ -5553,6 +5607,118 @@ function _missionFailed() {
   probeState = 'idle'
   roverAnchored = false
   _refreshLaunchBtn()
+}
+
+// ──────── PROBE HUD RINGS (3D orbital rings visible in probe cam scissor) ────────
+function _createProbeHudRings() {
+  _cleanupProbeHudRings()
+  const matGreen = new THREE.MeshBasicMaterial({ color: 0xb4ff50, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
+  const matCyan  = new THREE.MeshBasicMaterial({ color: 0x00ffe0, transparent: true, opacity: 0.2, side: THREE.DoubleSide })
+  // Horizontal scan ring
+  const r1 = new THREE.Mesh(new THREE.TorusGeometry(4, 0.08, 6, 40), matGreen)
+  r1.rotation.x = Math.PI / 2
+  scene.add(r1); _probeHudRings.push(r1)
+  // Tilted orbital ring
+  const r2 = new THREE.Mesh(new THREE.TorusGeometry(6, 0.06, 6, 40), matCyan.clone())
+  r2.rotation.x = Math.PI / 4
+  scene.add(r2); _probeHudRings.push(r2)
+  // Vertical ring
+  const r3 = new THREE.Mesh(new THREE.TorusGeometry(5, 0.06, 6, 40), matGreen.clone())
+  scene.add(r3); _probeHudRings.push(r3)
+}
+
+function _cleanupProbeHudRings() {
+  _probeHudRings.forEach(r => {
+    scene.remove(r)
+    r.geometry.dispose()
+    if (r.material) r.material.dispose()
+  })
+  _probeHudRings = []
+}
+
+// ──────── CAPSULE HUD LINE (3D guidance line capsule → satellite) ────────
+function _createCapsHudLine() {
+  if (_capsHudLine) { scene.remove(_capsHudLine); _capsHudLine.geometry.dispose(); _capsHudLine.material.dispose(); _capsHudLine = null }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3))
+  const mat = new THREE.LineBasicMaterial({ color: 0x00ffe0, transparent: true, opacity: 0.5 })
+  _capsHudLine = new THREE.Line(geo, mat)
+  scene.add(_capsHudLine)
+}
+
+// ──────── RETURN COUNTDOWN + NICE JOB MODAL ────────
+function _showReturnCountdown(samplesDelivered, samplesData) {
+  const cd = document.getElementById('return-countdown')
+  if (!cd) { _showNiceJobModal(samplesDelivered, samplesData); return }
+  let secs = 600
+  function fmt(s) {
+    const m = Math.floor(s / 60), sec = s % 60
+    return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0')
+  }
+  cd.style.display = 'block'
+  cd.textContent = fmt(secs)
+  const iv = setInterval(() => {
+    secs -= 1
+    if (secs <= 1) {
+      clearInterval(iv)
+      cd.textContent = '00:01'
+      cd.style.animation = 'none'; void cd.offsetWidth
+      cd.style.animation = 'returnCountdownTick 0.12s ease forwards'
+      setTimeout(() => { cd.style.display = 'none'; _showNiceJobModal(samplesDelivered, samplesData) }, 350)
+      return
+    }
+    cd.textContent = fmt(secs)
+    cd.style.animation = 'none'; void cd.offsetWidth
+    cd.style.animation = 'returnCountdownTick 0.09s ease forwards'
+  }, 100)
+}
+
+function _showNiceJobModal(samplesDelivered, samplesData) {
+  const modal = document.getElementById('nice-job-modal')
+  if (!modal) return
+  // Tubes
+  const tubesEl = document.getElementById('nice-job-tubes')
+  if (tubesEl && samplesData.length) {
+    tubesEl.innerHTML = samplesData.map(s => {
+      const col = (s.colors && s.colors[0]) ? s.colors[0] : '#00FFE0'
+      return `<div class="glass-tube" style="margin:0 3px;">
+        <div class="tube-cap"></div>
+        <div class="tube-body">
+          <div class="tube-fill" style="background:${col};height:78%;"></div>
+          <div class="tube-shine"></div>
+          <div class="tube-meniscus"></div>
+        </div>
+      </div>`
+    }).join('')
+  } else if (tubesEl) {
+    tubesEl.innerHTML = ''
+  }
+  // Detail text
+  const detail = document.getElementById('nice-job-detail')
+  if (detail) {
+    const biomes = [...new Set(samplesData.map(s => s.biome || 'Mars Surface'))].join(', ')
+    detail.textContent = `Has recuperado ${samplesDelivered} muestra${samplesDelivered !== 1 ? 's' : ''} · ${biomes}`
+  }
+  // Animate in
+  modal.style.opacity = '0'
+  modal.style.transition = 'none'
+  modal.style.transform = 'translate(-50%,-50%) scale(0.82)'
+  modal.style.display = 'flex'
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    modal.style.transition = 'opacity 0.4s ease, transform 0.45s cubic-bezier(0.2,1.3,0.4,1)'
+    modal.style.opacity = '1'
+    modal.style.transform = 'translate(-50%,-50%) scale(1)'
+  }))
+  // OK button closes modal
+  const okBtn = document.getElementById('nice-job-ok')
+  if (okBtn) {
+    okBtn.onclick = () => {
+      modal.style.transition = 'opacity 0.25s ease, transform 0.25s ease'
+      modal.style.opacity = '0'
+      modal.style.transform = 'translate(-50%,-50%) scale(0.9)'
+      setTimeout(() => { modal.style.display = 'none' }, 260)
+    }
+  }
 }
 
 // ──────── INIT (wire up buttons) ────────

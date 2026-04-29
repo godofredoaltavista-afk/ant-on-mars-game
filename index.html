@@ -714,11 +714,29 @@
   <div id="launch-countdown" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2400;font-family:'Orbitron','Share Tech Mono',monospace;font-size:140px;font-weight:900;color:#00FFE0;letter-spacing:0.05em;text-shadow:0 0 40px #00FFE0,0 0 80px #00FFE044;pointer-events:none;text-align:center;line-height:1;">5</div>
 
   <!-- PROBE CAM panel — orbital around the rocket while ascending. CENTERED BIG MODAL when active -->
-  <div id="probe-cam-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2050;width:1000px;height:680px;background:transparent;border:2px solid rgba(180,255,80,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 80px rgba(180,255,80,0.35),inset 0 0 80px rgba(0,0,0,0.6);">
+  <div id="probe-cam-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2050;width:78vw;height:72vh;background:transparent;border:2px solid rgba(180,255,80,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 80px rgba(180,255,80,0.35),inset 0 0 80px rgba(0,0,0,0.6);">
     <div id="probe-cam-label" style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(180,255,80,0.85);letter-spacing:0.18em;cursor:grab;pointer-events:auto;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);">
       <span>▲ PROBE ORBITAL · A/D ROTATE</span>
       <button id="probe-cam-close" style="background:none;border:none;color:rgba(180,255,80,0.5);cursor:pointer;font-size:11px;padding:0;line-height:1;pointer-events:auto;">✕</button>
     </div>
+    <!-- Probe HUD overlays — scanlines + vignette + corners + reticle + heading -->
+    <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(180,255,80,0.05) 0px,rgba(180,255,80,0.05) 1px,transparent 1px,transparent 3px);pointer-events:none;z-index:2;mix-blend-mode:overlay;border-radius:10px;"></div>
+    <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 32%,rgba(0,0,0,0.48) 75%,rgba(0,0,0,0.82) 100%);pointer-events:none;z-index:2;border-radius:10px;"></div>
+    <div style="position:absolute;top:32px;left:0;right:0;bottom:0;pointer-events:none;z-index:3;">
+      <div style="position:absolute;top:8px;left:8px;width:28px;height:28px;border-left:1.5px solid rgba(180,255,80,0.65);border-top:1.5px solid rgba(180,255,80,0.65);"></div>
+      <div style="position:absolute;top:8px;right:32px;width:28px;height:28px;border-right:1.5px solid rgba(180,255,80,0.65);border-top:1.5px solid rgba(180,255,80,0.65);"></div>
+      <div style="position:absolute;bottom:24px;left:8px;width:28px;height:28px;border-left:1.5px solid rgba(180,255,80,0.65);border-bottom:1.5px solid rgba(180,255,80,0.65);"></div>
+      <div style="position:absolute;bottom:24px;right:32px;width:28px;height:28px;border-right:1.5px solid rgba(180,255,80,0.65);border-bottom:1.5px solid rgba(180,255,80,0.65);"></div>
+    </div>
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:56px;height:56px;pointer-events:none;z-index:3;">
+      <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(180,255,80,0.35);transform:translateX(-50%);"></div>
+      <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(180,255,80,0.35);transform:translateY(-50%);"></div>
+      <div style="position:absolute;inset:12px;border:1px solid rgba(180,255,80,0.28);border-radius:50%;"></div>
+    </div>
+    <div style="position:absolute;top:40px;right:40px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(180,255,80,0.55);letter-spacing:0.14em;z-index:4;line-height:1.8;text-align:right;pointer-events:none;">
+      <div>ORB · ASCENT</div><div>VEH · DRONE</div><div id="probe-tel-heading">HDG · 000°</div>
+    </div>
+    <div style="position:absolute;bottom:30px;left:32px;right:40px;height:1px;background:linear-gradient(to right,transparent,rgba(180,255,80,0.28) 18%,rgba(180,255,80,0.28) 82%,transparent);pointer-events:none;z-index:3;"></div>
     <!-- Altitude bar inside the panel, right side -->
     <div id="probe-altitude-wrap" style="position:absolute;top:32px;right:8px;bottom:24px;width:18px;background:rgba(0,0,0,0.5);border:1px solid rgba(180,255,80,0.4);border-radius:3px;z-index:3;overflow:hidden;">
       <!-- Eject window highlighted band -->
@@ -729,15 +747,28 @@
     <!-- EJECT button overlay — MASSIVE when in window -->
     <button id="btn-eject-capsule" style="display:none;position:absolute;left:50%;bottom:54px;transform:translateX(-50%);z-index:5;font-family:'Share Tech Mono',monospace;font-size:24px;font-weight:bold;letter-spacing:0.32em;padding:22px 56px;background:linear-gradient(180deg,rgba(0,255,224,0.32),rgba(0,255,224,0.18));color:#FFFFFF;border:2.5px solid #00FFE0;border-radius:6px;cursor:pointer;backdrop-filter:blur(8px);animation:ejectPulse 0.45s ease infinite alternate;text-shadow:0 0 18px #00FFE0;box-shadow:0 0 60px rgba(0,255,224,0.6),inset 0 0 30px rgba(0,255,224,0.2);">◉ EJECT</button>
     <div id="probe-cam-status" style="position:absolute;left:8px;bottom:8px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(180,255,80,0.7);letter-spacing:0.12em;z-index:4;background:rgba(0,0,0,0.5);padding:3px 6px;border-radius:2px;">ALT: 0m</div>
-    <div id="probe-cam-resize-handle" style="position:absolute;bottom:0;left:0;width:16px;height:16px;cursor:nesw-resize;pointer-events:auto;z-index:5;background:linear-gradient(225deg,transparent 50%,rgba(180,255,80,0.5) 50%);"></div>
+    <div id="probe-cam-resize-handle" style="position:absolute;bottom:0;right:0;width:16px;height:16px;cursor:nwse-resize;pointer-events:auto;z-index:5;background:linear-gradient(135deg,transparent 50%,rgba(180,255,80,0.5) 50%);"></div>
   </div>
 
   <!-- CAPSULE CHASE CAM — large modal, mouse-aimed crosshair (Capa 4 v2) -->
-  <div id="capsule-cam-panel" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2050;width:1000px;height:680px;background:transparent;border:2px solid rgba(0,255,224,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 100px rgba(0,255,224,0.45),inset 0 0 60px rgba(0,0,0,0.5);">
+  <div id="capsule-cam-panel" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2050;width:78vw;height:72vh;background:transparent;border:2px solid rgba(0,255,224,0.7);border-radius:10px;overflow:hidden;pointer-events:auto;user-select:none;box-shadow:0 0 100px rgba(0,255,224,0.45),inset 0 0 60px rgba(0,0,0,0.5);">
     <div id="capsule-cam-label" style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:6px 12px;font-family:'Share Tech Mono',monospace;font-size:10px;color:#00FFE0;letter-spacing:0.2em;cursor:grab;pointer-events:auto;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);">
       <span style="font-weight:bold;">◉ CAPSULE TRAJECTORY · MOUSE TO STEER · FIND SAT_SLOT</span>
       <span id="capsule-distance" style="font-size:9px;color:rgba(0,255,224,0.85);font-weight:bold;">DIST: —</span>
     </div>
+    <!-- Capsule HUD overlays — scanlines + vignette + corner brackets + status -->
+    <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(0,255,224,0.04) 0px,rgba(0,255,224,0.04) 1px,transparent 1px,transparent 3px);pointer-events:none;z-index:2;mix-blend-mode:overlay;border-radius:10px;"></div>
+    <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 28%,rgba(0,0,0,0.45) 72%,rgba(0,0,0,0.8) 100%);pointer-events:none;z-index:2;border-radius:10px;"></div>
+    <div style="position:absolute;top:32px;left:0;right:0;bottom:0;pointer-events:none;z-index:3;">
+      <div style="position:absolute;top:8px;left:8px;width:28px;height:28px;border-left:1.5px solid rgba(0,255,224,0.65);border-top:1.5px solid rgba(0,255,224,0.65);"></div>
+      <div style="position:absolute;top:8px;right:32px;width:28px;height:28px;border-right:1.5px solid rgba(0,255,224,0.65);border-top:1.5px solid rgba(0,255,224,0.65);"></div>
+      <div style="position:absolute;bottom:24px;left:8px;width:28px;height:28px;border-left:1.5px solid rgba(0,255,224,0.65);border-bottom:1.5px solid rgba(0,255,224,0.65);"></div>
+      <div style="position:absolute;bottom:24px;right:32px;width:28px;height:28px;border-right:1.5px solid rgba(0,255,224,0.65);border-bottom:1.5px solid rgba(0,255,224,0.65);"></div>
+    </div>
+    <div style="position:absolute;top:40px;right:40px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(0,255,224,0.55);letter-spacing:0.14em;z-index:4;line-height:1.8;text-align:right;pointer-events:none;">
+      <div>SEQ · INTERCEPT</div><div>TARGET · SAT_SLOT</div><div>SYS · ACTIVE</div>
+    </div>
+    <div style="position:absolute;bottom:30px;left:32px;right:40px;height:1px;background:linear-gradient(to right,transparent,rgba(0,255,224,0.28) 18%,rgba(0,255,224,0.28) 82%,transparent);pointer-events:none;z-index:3;"></div>
     <!-- Center static crosshair (NOT the cursor — this is the capsule heading) -->
     <div style="position:absolute;left:50%;top:50%;width:36px;height:36px;transform:translate(-50%,-50%);pointer-events:none;z-index:3;">
       <div style="position:absolute;left:50%;top:0;width:1px;height:100%;background:rgba(255,255,255,0.45);transform:translateX(-50%);"></div>
@@ -764,18 +795,41 @@
       <div>ALT: <span id="cap-tel-alt">0</span> m</div>
       <div>DRIFT: <span id="cap-tel-drift">0°</span></div>
     </div>
+    <div id="capsule-cam-resize-handle" style="position:absolute;bottom:0;right:0;width:16px;height:16px;cursor:nwse-resize;pointer-events:auto;z-index:5;background:linear-gradient(135deg,transparent 50%,rgba(0,255,224,0.5) 50%);"></div>
   </div>
 
-  <!-- MISSION COMPLETE banner -->
+  <!-- MISSION COMPLETE banner (kept for backward compat, hidden by default) -->
   <div id="mission-complete-banner" style="display:none;position:fixed;left:50%;top:30%;transform:translate(-50%,-50%);z-index:2200;font-family:'Share Tech Mono',monospace;font-size:18px;letter-spacing:0.32em;color:#B4FF50;background:rgba(0,0,0,0.85);border:1.5px solid #B4FF50;border-radius:6px;padding:18px 36px;text-align:center;box-shadow:0 0 60px rgba(180,255,80,0.4);">
     <div>✦ MISSION COMPLETE</div>
     <div style="font-size:10px;color:rgba(180,255,80,0.7);margin-top:8px;letter-spacing:0.18em;" id="mission-complete-detail">SAMPLES DELIVERED TO ORBIT</div>
+  </div>
+
+  <!-- RETURN COUNTDOWN — technical clock style, very fast (mission return sequence) -->
+  <div id="return-countdown" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2400;font-family:'Share Tech Mono',monospace;font-size:92px;font-weight:700;color:#00FFE0;letter-spacing:0.06em;text-shadow:0 0 40px #00FFE0,0 0 80px #00FFE044;pointer-events:none;text-align:center;line-height:1;">10:00</div>
+
+  <!-- NICE JOB MODAL — mission success, sample summary + continue -->
+  <div id="nice-job-modal" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2500;min-width:460px;max-width:640px;background:linear-gradient(180deg,rgba(0,8,16,0.97),rgba(0,4,12,0.99));border:1.5px solid rgba(180,255,80,0.75);border-radius:14px;padding:32px 36px 28px;font-family:'Share Tech Mono',monospace;text-align:center;box-shadow:0 0 80px rgba(180,255,80,0.35),0 0 200px rgba(180,255,80,0.1);flex-direction:column;align-items:center;gap:18px;">
+    <div style="font-family:'Orbitron','Share Tech Mono',monospace;font-size:26px;font-weight:900;color:#B4FF50;letter-spacing:0.1em;text-shadow:0 0 24px rgba(180,255,80,0.8);line-height:1.2;">! NICE JOB TEAMATE</div>
+    <div style="font-size:11px;color:rgba(180,255,80,0.5);letter-spacing:0.28em;margin-top:-8px;">NICE TRIP !</div>
+    <div id="nice-job-detail" style="font-size:11px;color:rgba(0,255,224,0.85);letter-spacing:0.15em;margin-top:6px;line-height:1.7;">Has recuperado muestras</div>
+    <div id="nice-job-tubes" style="display:flex;flex-direction:row;align-items:flex-end;justify-content:center;gap:10px;margin:10px 0 6px;min-height:64px;"></div>
+    <div style="font-size:8px;color:rgba(180,255,80,0.32);letter-spacing:0.22em;line-height:1.9;margin-top:2px;">
+      <div>MUESTRAS ENTREGADAS AL SATÉLITE ✦</div>
+      <div style="color:rgba(0,255,224,0.22);margin-top:2px;">CARGANDO PRÓXIMA MISIÓN . . .</div>
+    </div>
+    <button id="nice-job-ok" style="margin-top:10px;font-family:'Share Tech Mono',monospace;font-size:12px;letter-spacing:0.28em;padding:13px 48px;background:linear-gradient(180deg,rgba(180,255,80,0.2),rgba(180,255,80,0.08));color:#B4FF50;border:1.5px solid rgba(180,255,80,0.6);border-radius:5px;cursor:pointer;box-shadow:0 0 24px rgba(180,255,80,0.22);">OK · CONTINUAR</button>
   </div>
 
   <style>
     @keyframes ejectPulse {
       from { transform: translateX(-50%) scale(1); box-shadow: 0 0 0 rgba(0,255,224,0.0); }
       to   { transform: translateX(-50%) scale(1.06); box-shadow: 0 0 24px rgba(0,255,224,0.6); }
+    }
+    @keyframes returnCountdownTick {
+      0%   { opacity: 0.4; }
+      15%  { opacity: 1; }
+      85%  { opacity: 1; }
+      100% { opacity: 0.6; }
     }
     @keyframes drillPopupIn {
       0%   { transform: translate(-50%,-50%) scale(0.6); opacity: 0; }
