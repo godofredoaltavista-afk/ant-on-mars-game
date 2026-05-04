@@ -270,8 +270,29 @@ let _turnBlinkT = 0
 // Night mode
 let _nightMode = false
 let _ingenuitySpinAngle = 0             // legacy — no longer used for spin, kept for cleanup safety
+let _droneOnlyFlight = false            // true when drone launched standalone (no probe mission)
 let _probeHudRings = []                 // 3D orbital rings around probe (HUD)
 let _capsHudLine = null                 // 3D targeting line capsule → satellite (HUD)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DRONE FLIGHT MODE — state & constants
+// ═══════════════════════════════════════════════════════════════════════════
+let droneActive = false
+let droneFpvOpen = false                // T toggles FPV sub-panels (does NOT change main cam)
+let droneBattery = 1.0                  // 0–1 (100% = ~60s full flight)
+let _droneOrbitAngle = 0               // orbit angle for 3rd-person drone cam
+let _droneTiltX = 0, _droneTiltZ = 0   // current visual tilt (radians, lerped)
+let _droneSpinSpeed = 0                 // current rotor spin rate (0=stopped, 18=full)
+let _droneSpunDown  = false             // true after manual Shift-brake; only Space restarts
+let droneFpvFrontCamera = null          // FPV forward camera (scissor sub-panel)
+let droneFpvBotCamera   = null          // FPV downward camera (scissor sub-panel)
+const DRONE_HOVER_FORCE  = 3.72 * 1.4  // counteract Mars gravity (3.72 m/s²) + hover overhead
+const DRONE_LATERAL_THRUST = 16.0      // m/s² lateral thrust (per mass)
+const DRONE_VERTICAL_THRUST = 14.0     // extra vertical
+const DRONE_YAW_SPEED    = 1.8         // rad/s — Q/E yaw
+const DRONE_BATTERY_DRAIN = 1 / 60     // 60s full-throttle flight = 100%
+const DRONE_TILT_MAX     = 0.28        // ~16° max tilt
+const DRONE_TILT_LERP    = 4.0         // tilt interpolation speed (higher = snappier)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INIT
@@ -1504,7 +1525,9 @@ function setupEvents() {
     if (e.code === 'KeyZ' && !constructorMode) { setDriveMode(vehicleMode==='magnetic'?'gravity':'magnetic'); return }
     if (e.code === 'KeyH' && !constructorMode) { setDriveMode(vehicleMode==='hook'?'gravity':'hook'); return }
     if (e.code === 'KeyF' && !constructorMode) { setDriveMode(vehicleMode==='float'?'gravity':'float'); return }
-    if (e.code === 'KeyO' && !constructorMode) { carSettings.orbitControls=!carSettings.orbitControls; orbit.enabled=carSettings.orbitControls; if(carSettings.orbitControls) orbit.target.copy(chassisPos); syncOrbitalBtn(); return }
+    if (e.code === 'KeyO' && !constructorMode) { carSettings.orbitControls=!carSettings.orbitControls; orbit.enabled=carSettings.orbitControls; if(carSettings.orbitControls) orbit.target.copy(droneActive && probeMesh ? probeMesh.position : chassisPos); syncOrbitalBtn(); return }
+    if (e.code === 'KeyT' && droneActive) { e.preventDefault(); e.stopPropagation(); droneFpvOpen=!droneFpvOpen; const fpvFront=document.getElementById('drone-fpv-front-panel'); const fpvBot=document.getElementById('drone-fpv-bot-panel'); if(fpvFront) fpvFront.style.display=droneFpvOpen?'block':'none'; if(fpvBot) fpvBot.style.display=droneFpvOpen?'block':'none'; showToast(droneFpvOpen?'◈ DRONE FPV ON':'◈ DRONE FPV OFF','#00FFE0',700); return }
+    if (e.code === 'Backquote' && droneActive) { deactivateDroneController(); return }
     if (e.code === 'KeyM') { e.preventDefault(); document.getElementById('btn-minimap').click(); return }
     if (e.code === 'KeyV' && !constructorMode) { swapVehiclePreset(); return }
     if (e.code === 'KeyP') { carSettings.debug=!carSettings.debug; return }
@@ -1594,12 +1617,12 @@ function animate() {
     return
   }
 
-  const accel = (constructorMode?0:(keys.KeyW?1:0)-(keys.KeyS?1:0))
-  const steer = (constructorMode?0:(keys.KeyA?1:0)-(keys.KeyD?1:0))
-  const spaceDown = !!keys.Space
+  const accel = (constructorMode||droneActive?0:(keys.KeyW?1:0)-(keys.KeyS?1:0))
+  const steer = (constructorMode||droneActive?0:(keys.KeyA?1:0)-(keys.KeyD?1:0))
+  const spaceDown = !droneActive && !!keys.Space
   const jumpPressed = spaceDown && !prevSpace
   prevSpace = spaceDown
-  const boosting = !!keys.ShiftLeft || !!keys.ShiftRight
+  const boosting = !droneActive && (!!keys.ShiftLeft || !!keys.ShiftRight)
 
   const vel = chassisBody.linvel()
   const fwd = new THREE.Vector3(1,0,0).applyQuaternion(chassisQuat)
@@ -1701,7 +1724,27 @@ function animate() {
   dirLight.position.set(chassisPos.x+Math.cos(elRad)*Math.sin(azRad)*lightDist, chassisPos.y+Math.sin(elRad)*lightDist, chassisPos.z+Math.cos(elRad)*Math.cos(azRad)*lightDist)
   dirLight.target.position.copy(chassisPos); dirLight.target.updateMatrixWorld()
 
-  if (carSettings.orbitControls) { orbit.target.lerp(chassisPos,0.1); orbit.update() }
+  if (droneActive && probeMesh) {
+    if (camera.fov !== 60) { camera.fov = 60; camera.updateProjectionMatrix() }
+    const camMode = document.getElementById('drone-cam-mode')
+    if (carSettings.orbitControls) {
+      // ── FREE ORBIT while drone active — mouse controls camera, WASD still flies ──
+      orbit.target.lerp(new THREE.Vector3(probeMesh.position.x, probeMesh.position.y + 0.4, probeMesh.position.z), 0.08)
+      orbit.update()
+      if (camMode) camMode.textContent = 'ORB'
+    } else {
+      // ── DEFAULT 3rd-person follow cam ──
+      const dist = 8, hOff = 2.2
+      const idealPos = new THREE.Vector3(
+        probeMesh.position.x + Math.cos(_droneOrbitAngle) * dist,
+        probeMesh.position.y + hOff,
+        probeMesh.position.z + Math.sin(_droneOrbitAngle) * dist
+      )
+      camera.position.lerp(idealPos, 0.1)
+      camera.lookAt(probeMesh.position.x, probeMesh.position.y + 0.4, probeMesh.position.z)
+      if (camMode) camMode.textContent = droneFpvOpen ? 'FPV' : '3P'
+    }
+  } else if (carSettings.orbitControls) { orbit.target.lerp(chassisPos,0.1); orbit.update() }
   else if (isFloatMode) {
     const camFwd = new THREE.Vector3(1,0,0).applyQuaternion(chassisQuat)
     const ideal = chassisPos.clone().addScaledVector(camFwd, -cameraSettings.distance * 2.5)
@@ -1766,6 +1809,8 @@ function animate() {
   tickLaunchPrep()
   // CAPA 2/3 — probe flight + altitude bar + eject window detection
   tickProbe(FIXED_DT)
+  // DRONE FLIGHT MODE — manual control when player has activated it
+  if (droneActive) tickDroneController(FIXED_DT)
   // CAPA 4 — capsule guidance + sat_slot capture check
   tickCapsule(FIXED_DT)
   // CAPA 4 — sat_slot orbit motion (only while probe/capsule alive)
@@ -1805,6 +1850,8 @@ function animate() {
   renderProbeCamScissor()
   // CAPA 4 — CAPSULE chase scissor render
   renderCapsuleCamScissor()
+  // DRONE FPV — front + bottom sub-panels (T key while drone active)
+  if (droneFpvOpen) renderDroneFpvScissor()
 
   stats.update()
 }
@@ -4665,7 +4712,7 @@ function initDrillModule() {
   addEventListener('keydown', (e) => {
     if (e.repeat) return
     if (constructorMode || escapeMenuOpen || teleportMenuOpen || freeTpActive) return
-    if (e.code === 'KeyT') { e.preventDefault(); openPanel(!drillCamOpen); return }
+    if (e.code === 'KeyT' && !droneActive) { e.preventDefault(); openPanel(!drillCamOpen); return }
   })
 
   // Initial HUD render so the slots have correct background even when first opened
@@ -4739,7 +4786,7 @@ function initRoverLights() {
   // L key cycles modes: position → low → high → position
   addEventListener('keydown', (e) => {
     if (e.repeat) return
-    if (e.code === 'KeyL') {
+    if (e.code === 'KeyL' && !droneActive) {
       _lightMode = (_lightMode + 1) % 3
       _updateLightModeUI()
       showToast(`LIGHTS: ${_LIGHT_MODES[_lightMode]}`, '#FFB432', 900)
@@ -4858,9 +4905,9 @@ function tickRoverLights(dt) {
   if (!chassisGroup) return
   _turnBlinkT += dt
   const blink        = (_turnBlinkT % 0.65) < 0.32
-  const turningLeft  = !!keys.KeyA   // A = left turn = left (−Z) blinker
-  const turningRight = !!keys.KeyD   // D = right turn = right (+Z) blinker
-  const braking      = !!keys.KeyS
+  const turningLeft  = !droneActive && !!keys.KeyA
+  const turningRight = !droneActive && !!keys.KeyD
+  const braking      = !droneActive && !!keys.KeyS
 
   // ── HEADLIGHTS — indices 0-1 = LOW BEAM, indices 2-3 = HIGH BEAM ──
   // mode 0 (POSITION): all off — just placed, no emission
@@ -5157,7 +5204,8 @@ async function launchProbe() {
     .setAngularDamping(0.5)
     .setGravityScale(PROBE_GRAVITY_SCALE)
   probeBody = physicsWorld.createRigidBody(bodyDesc)
-  const colDesc = RAPIER.ColliderDesc.cylinder(0.7, 0.35).setMass(2.0).setRestitution(0)
+  // Cylinder base at foot level (y=0 local), centered 0.55 above
+  const colDesc = RAPIER.ColliderDesc.cylinder(0.55, 0.32).setTranslation(0, 0.55, 0).setMass(2.0).setRestitution(0)
   physicsWorld.createCollider(colDesc, probeBody)
   // Visual — Ingenuity drone GLB, spinning fast on Y like a drone
   probeMesh = new THREE.Group()
@@ -5167,14 +5215,13 @@ async function launchProbe() {
     .then(gltf => {
       const model = gltf.scene
       const box = new THREE.Box3().setFromObject(model)
-      const size = new THREE.Vector3()
-      box.getSize(size)
-      const maxDim = Math.max(size.x, size.y, size.z)
-      model.scale.setScalar(2.5 / Math.max(maxDim, 0.01))
-      box.setFromObject(model)
-      const center = new THREE.Vector3()
-      box.getCenter(center)
-      model.position.sub(center)
+      const size = new THREE.Vector3(); box.getSize(size)
+      model.scale.setScalar(2.5 / Math.max(size.x, size.y, size.z, 0.01))
+      const box2 = new THREE.Box3().setFromObject(model)
+      const center = new THREE.Vector3(); box2.getCenter(center)
+      model.position.x = -center.x
+      model.position.z = -center.z
+      model.position.y = -center.y
       model.traverse(c => { if (c.isMesh) c.castShadow = true })
       probeMesh.add(model)
     })
@@ -5192,6 +5239,12 @@ async function launchProbe() {
   probeBody.applyImpulse({ x: 0, y: PROBE_LAUNCH_IMPULSE * mass, z: 0 }, true)
   probeState = 'flying'
   _probeLaunchTime = performance.now()
+  droneActive = false  // reset drone mode on every fresh launch
+  // Show FLY MARS button after short delay (drone needs to clear the ground)
+  setTimeout(() => {
+    const btn = document.getElementById('btn-fly-mars')
+    if (btn && (probeState === 'flying' || probeState === 'eject_window')) btn.style.display = 'block'
+  }, 2500)
   // Open probe cam panel
   const panel = document.getElementById('probe-cam-panel')
   if (panel) {
@@ -5228,9 +5281,12 @@ function tickProbe(dt) {
   const p = probeBody.translation()
   const r = probeBody.rotation()
   probeMesh.position.set(p.x, p.y, p.z)
-  _ingenuitySpinAngle += dt * 22
-  probeMesh.rotation.set(0, _ingenuitySpinAngle, 0)
-  // Animate 3D HUD rings
+  if (!droneActive) {
+    // Autopilot: spin probe mesh on Y axis
+    _ingenuitySpinAngle += dt * 22
+    probeMesh.rotation.set(0, _ingenuitySpinAngle, 0)
+  }
+  // Animate 3D HUD rings (always, autopilot or manual)
   if (_probeHudRings.length >= 3) {
     _probeHudRings[0].position.copy(probeMesh.position)
     _probeHudRings[0].rotation.z += dt * 0.6
@@ -5239,17 +5295,19 @@ function tickProbe(dt) {
     _probeHudRings[2].position.copy(probeMesh.position)
     _probeHudRings[2].rotation.x += dt * 0.3
   }
-  // Player rotates orbit angle with A/D (don't conflict with steering — steering only matters when grounded)
-  if (keys.KeyA) probeOrbitAngle -= dt * 1.6
-  if (keys.KeyD) probeOrbitAngle += dt * 1.6
   // Compute altitude relative to launch
   const altitude = p.y - probeLaunchPos.y
-  // Progressive thrust via impulse (Rapier has no applyForce — impulse = force × dt)
-  const age = (performance.now() - _probeLaunchTime) / 1000
-  const pm  = probeBody.mass()
-  const thrustY = (3.72 * 1.55 + age * 0.48) * pm   // starts just above gravity, grows with time
-  const wobble  = altitude < 22 ? (Math.random() - 0.5) * pm * 1.6 : 0  // wobbly first 22m
-  probeBody.applyImpulse({ x: wobble * dt, y: thrustY * dt, z: wobble * 0.7 * dt }, true)
+  if (!droneActive) {
+    // Autopilot: orbit angle via A/D + progressive thrust
+    if (keys.KeyA) probeOrbitAngle -= dt * 1.6
+    if (keys.KeyD) probeOrbitAngle += dt * 1.6
+    // Progressive thrust via impulse (Rapier has no applyForce — impulse = force × dt)
+    const age = (performance.now() - _probeLaunchTime) / 1000
+    const pm  = probeBody.mass()
+    const thrustY = (3.72 * 1.55 + age * 0.48) * pm   // starts just above gravity, grows with time
+    const wobble  = altitude < 22 ? (Math.random() - 0.5) * pm * 1.6 : 0  // wobbly first 22m
+    probeBody.applyImpulse({ x: wobble * dt, y: thrustY * dt, z: wobble * 0.7 * dt }, true)
+  }
   // Update altitude marker + moving arrow on the bar
   const wrap = document.getElementById('probe-altitude-wrap')
   const marker = document.getElementById('probe-alt-marker')
@@ -5263,26 +5321,255 @@ function tickProbe(dt) {
   // Status text
   const status = document.getElementById('probe-cam-status')
   if (status) status.textContent = `ALT: ${altitude.toFixed(0)}m`
-  // Eject window state + hint text
-  const ejectBtn = document.getElementById('btn-eject-capsule')
-  const ejectHint = document.getElementById('probe-eject-hint')
-  const inWindow = altitude >= PROBE_EJECT_MIN_ALT && altitude <= PROBE_EJECT_MAX_ALT
-  if (inWindow && probeState === 'flying') {
-    probeState = 'eject_window'
-    if (ejectBtn) ejectBtn.style.display = 'block'
-    if (ejectHint) ejectHint.style.display = 'block'
-    showToast('◉ EJECT WINDOW · CLICK NOW', '#00FFE0', 1800)
-  } else if (!inWindow && probeState === 'eject_window' && altitude > PROBE_EJECT_MAX_ALT) {
-    // Missed the window
-    if (ejectBtn) ejectBtn.style.display = 'none'
-    if (ejectHint) ejectHint.style.display = 'none'
-    _missedEjectWindow()
-    return
+  // Eject window + timeout: skip entirely when drone is under manual control
+  if (!droneActive && !_droneOnlyFlight) {
+    const ejectBtn = document.getElementById('btn-eject-capsule')
+    const ejectHint = document.getElementById('probe-eject-hint')
+    const inWindow = altitude >= PROBE_EJECT_MIN_ALT && altitude <= PROBE_EJECT_MAX_ALT
+    if (inWindow && probeState === 'flying') {
+      probeState = 'eject_window'
+      if (ejectBtn) ejectBtn.style.display = 'block'
+      if (ejectHint) ejectHint.style.display = 'block'
+      showToast('◉ EJECT WINDOW · CLICK NOW', '#00FFE0', 1800)
+    } else if (!inWindow && probeState === 'eject_window' && altitude > PROBE_EJECT_MAX_ALT) {
+      if (ejectBtn) ejectBtn.style.display = 'none'
+      if (ejectHint) ejectHint.style.display = 'none'
+      _missedEjectWindow()
+      return
+    }
+    // Safety timeout
+    if ((performance.now() - _probeLaunchTime) / 1000 > PROBE_MAX_FLIGHT_TIME) {
+      if (probeState === 'eject_window') ejectCapsule()
+      else _missedEjectWindow()
+    }
   }
-  // Safety timeout — if 28s pass, auto-eject
-  if ((performance.now() - _probeLaunchTime) / 1000 > PROBE_MAX_FLIGHT_TIME) {
-    if (probeState === 'eject_window') ejectCapsule()
-    else _missedEjectWindow()
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DRONE FLIGHT MODE — DroneController functions
+// ═══════════════════════════════════════════════════════════════════════════
+function activateDroneController() {
+  if (!probeBody || !probeMesh) { showToast('NO DRONE IN AIR', '#FF4444', 1200); return }
+  droneActive = true
+  droneBattery = 1.0
+  droneFpvOpen = false
+  _droneSpinSpeed = 0
+  _droneSpunDown  = false
+  _droneOrbitAngle = probeOrbitAngle
+  _droneTiltX = 0; _droneTiltZ = 0
+  // Reset gravity to 1.0 — the probe body was launched with gravityScale=-0.025 (upward drift)
+  // Hover force in tickDroneController handles levitation from here
+  probeBody.setGravityScale(1.0, true)
+  // Boost linear damping so the drone feels responsive instead of floaty
+  probeBody.setLinearDamping(0.55)
+  probeBody.setAngularDamping(0.95)
+  // Kill any residual upward velocity from autopilot
+  const vel = probeBody.linvel()
+  probeBody.setLinvel({ x: vel.x * 0.1, y: Math.min(vel.y, 2), z: vel.z * 0.1 }, true)
+  // Hide probe cam panel — main cam takes over full-screen
+  const panel = document.getElementById('probe-cam-panel')
+  if (panel) panel.style.display = 'none'
+  // Hide FLY MARS button; transform FLY DRONE into ATERRIZAR button
+  const btnFly = document.getElementById('btn-fly-mars')
+  if (btnFly) btnFly.style.display = 'none'
+  const btnDrone = document.getElementById('btn-fly-drone')
+  if (btnDrone) {
+    btnDrone.textContent = '▼ ATERRIZAR'
+    btnDrone.style.color = '#FF8844'
+    btnDrone.style.borderColor = 'rgba(255,136,68,0.6)'
+    btnDrone.style.background = 'rgba(255,136,68,0.08)'
+    btnDrone.onclick = (e) => { e.currentTarget.blur(); deactivateDroneController() }
+  }
+  // Show drone HUD
+  const hud = document.getElementById('drone-hud')
+  if (hud) hud.style.display = 'flex'
+  showToast('◈ DRONE ACTIVE  ·  WASD QE SPACE/SHIFT  ·  T:CAM  ·  `:EXIT', '#00FFE0', 3000)
+}
+
+function deactivateDroneController() {
+  droneActive = false
+  droneFpvOpen = false
+  if (camera.fov !== 60) { camera.fov = 60; camera.updateProjectionMatrix() }
+  const hud = document.getElementById('drone-hud')
+  if (hud) hud.style.display = 'none'
+  const fpvFront = document.getElementById('drone-fpv-front-panel')
+  const fpvBot   = document.getElementById('drone-fpv-bot-panel')
+  if (fpvFront) fpvFront.style.display = 'none'
+  if (fpvBot)   fpvBot.style.display   = 'none'
+  // Restore FLY DRONE button to original state
+  const btnDrone = document.getElementById('btn-fly-drone')
+  if (btnDrone) {
+    btnDrone.textContent = '◈ FLY DRONE'
+    btnDrone.style.color = '#00FFE0'
+    btnDrone.style.borderColor = 'rgba(0,255,224,0.5)'
+    btnDrone.style.background = 'rgba(0,255,224,0.07)'
+    btnDrone.onclick = null
+  }
+  if (_droneOnlyFlight) {
+    // Standalone drone: clean up after short delay (drone falls with gravity)
+    _droneOnlyFlight = false
+    probeState = 'idle'
+    setTimeout(() => _cleanupProbe(), 3000)
+    showToast('◈ DRONE RETURNING', '#888888', 1500)
+  } else {
+    showToast('◈ DRONE MODE OFF', '#888888', 1500)
+  }
+}
+
+async function launchDroneOnly() {
+  if (probeMesh || probeBody) { showToast('DRONE ALREADY IN AIR', '#FF4444', 1500); return }
+  if (!chassisBody) return
+  showToast('◈ DEPLOYING DRONE…', '#00FFE0', 1000)
+  const t = chassisBody.translation()
+  probeLaunchPos = { x: t.x, y: t.y + 1.5, z: t.z }
+  // Physics body with NORMAL gravity — hover force in tickDroneController handles levitation
+  const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
+    .setTranslation(probeLaunchPos.x, probeLaunchPos.y + 0.5, probeLaunchPos.z)
+    .setLinearDamping(0.55)
+    .setAngularDamping(0.95)
+    .setGravityScale(1.0)
+  probeBody = physicsWorld.createRigidBody(bodyDesc)
+  // Cylinder base at y=0 (foot/leg level) — halfHeight=0.45, centered 0.45 above feet
+  physicsWorld.createCollider(
+    RAPIER.ColliderDesc.cylinder(0.45, 0.28)
+      .setTranslation(0, 0.45, 0)
+      .setMass(2.0).setRestitution(0.0),
+    probeBody
+  )
+  // Small launch kick
+  probeBody.applyImpulse({ x: 0, y: probeBody.mass() * 8, z: 0 }, true)
+  // Ingenuity GLB mesh
+  probeMesh = new THREE.Group()
+  _ingenuitySpinAngle = 0
+  scene.add(probeMesh)
+  new Promise((res, rej) => gltfLoader.load(`${GLB_CDN_BASE}/Ingenuity Mars Helicopter.glb`, res, null, rej))
+    .then(gltf => {
+      const model = gltf.scene
+      const box = new THREE.Box3().setFromObject(model)
+      const s = new THREE.Vector3(); box.getSize(s)
+      model.scale.setScalar(2.5 / Math.max(s.x, s.y, s.z, 0.01))
+      const box2 = new THREE.Box3().setFromObject(model)
+      const c = new THREE.Vector3(); box2.getCenter(c)
+      model.position.x = -c.x
+      model.position.z = -c.z
+      model.position.y = -c.y
+      model.traverse(o => { if (o.isMesh) o.castShadow = true })
+      probeMesh.add(model)
+    })
+    .catch(() => {
+      probeMesh.add(new THREE.Mesh(new THREE.BoxGeometry(1, 0.25, 1), new THREE.MeshStandardMaterial({ color: 0x00FFE0, metalness: 0.8 })))
+    })
+  _createProbeHudRings()
+  probeState = 'flying'
+  _probeLaunchTime = performance.now()
+  _droneOnlyFlight = true
+  // Activate drone controller immediately
+  setTimeout(() => { if (probeMesh && probeBody) activateDroneController() }, 600)
+}
+
+function tickDroneController(dt) {
+  if (!droneActive || !probeBody || !probeMesh) return
+
+  const pm = probeBody.mass()
+
+  // ── Camera-relative forward/right vectors ──
+  const _camDir = new THREE.Vector3()
+  camera.getWorldDirection(_camDir); _camDir.y = 0; _camDir.normalize()
+  const fwdX = _camDir.x, fwdZ = _camDir.z
+  const rgtX = -fwdZ, rgtZ = fwdX
+
+  // ── Ground / Shift-brake detection ──
+  const _vel        = probeBody.linvel()
+  const _terrainY   = getTerrainHeight(probeMesh.position.x, probeMesh.position.z)
+  const _onGround   = probeMesh.position.y - _terrainY < 0.25
+  const _shiftBlock = (keys.ShiftLeft || keys.ShiftRight) && _vel.y > -0.6
+  const shouldStop  = _onGround || _shiftBlock
+
+  // ── Rotor spin sequencing ──
+  // Once spun down (manual Shift-brake), only Space restarts the spin.
+  // Space restarts the rotor first; thrust only applies once spin ≥ 16 rad/s.
+  if (shouldStop && !keys.Space) {
+    _droneSpinSpeed = Math.max(0, _droneSpinSpeed - dt * 10)
+    if (_droneSpinSpeed === 0) _droneSpunDown = true
+  } else if (_droneSpunDown && !keys.Space) {
+    // Waiting for Space — keep spin at zero
+  } else {
+    if (_droneSpunDown) _droneSpunDown = false   // Space clears the lock
+    _droneSpinSpeed = Math.min(18, _droneSpinSpeed + dt * 14)
+  }
+  _ingenuitySpinAngle += _droneSpinSpeed * dt
+
+  // Thrust activates only when rotors are up to speed
+  const spinReady = _droneSpinSpeed >= 16
+
+  // ── Hover: counteract gravity (only when rotors are spinning) ──
+  if (spinReady) probeBody.applyImpulse({ x: 0, y: DRONE_HOVER_FORCE * pm * dt, z: 0 }, true)
+
+  // ── Lateral thrust (WASD) + visual tilt targets ──
+  // W/S tilt: top of drone leans into direction of movement (+ = forward lean)
+  let tiltTargetX = 0, tiltTargetZ = 0
+  if (spinReady) {
+    if (keys.KeyW) {
+      probeBody.applyImpulse({ x: fwdX * DRONE_LATERAL_THRUST * pm * dt, y: 0, z: fwdZ * DRONE_LATERAL_THRUST * pm * dt }, true)
+      tiltTargetX =  fwdZ * DRONE_TILT_MAX   // inverted: top leans forward
+      tiltTargetZ = -fwdX * DRONE_TILT_MAX
+    }
+    if (keys.KeyS) {
+      probeBody.applyImpulse({ x: -fwdX * DRONE_LATERAL_THRUST * pm * dt, y: 0, z: -fwdZ * DRONE_LATERAL_THRUST * pm * dt }, true)
+      tiltTargetX = -fwdZ * DRONE_TILT_MAX
+      tiltTargetZ =  fwdX * DRONE_TILT_MAX
+    }
+    if (keys.KeyA) {
+      probeBody.applyImpulse({ x: -rgtX * DRONE_LATERAL_THRUST * pm * dt, y: 0, z: -rgtZ * DRONE_LATERAL_THRUST * pm * dt }, true)
+      tiltTargetX = -rgtZ * DRONE_TILT_MAX
+      tiltTargetZ =  rgtX * DRONE_TILT_MAX
+    }
+    if (keys.KeyD) {
+      probeBody.applyImpulse({ x: rgtX * DRONE_LATERAL_THRUST * pm * dt, y: 0, z: rgtZ * DRONE_LATERAL_THRUST * pm * dt }, true)
+      tiltTargetX =  rgtZ * DRONE_TILT_MAX
+      tiltTargetZ = -rgtX * DRONE_TILT_MAX
+    }
+
+    // ── Vertical thrust (Space up / Shift down) ──
+    if (keys.Space)    probeBody.applyImpulse({ x: 0, y:  DRONE_VERTICAL_THRUST * pm * dt, z: 0 }, true)
+    if (keys.ShiftLeft || keys.ShiftRight)
+                       probeBody.applyImpulse({ x: 0, y: -DRONE_VERTICAL_THRUST * pm * dt, z: 0 }, true)
+  }
+
+  // ── Q / E orbit camera only ──
+  if (keys.KeyQ) _droneOrbitAngle -= DRONE_YAW_SPEED * dt
+  if (keys.KeyE) _droneOrbitAngle += DRONE_YAW_SPEED * dt
+
+  // ── Visual tilt lerp — quaternion composition avoids Euler wobble ──
+  _droneTiltX += (tiltTargetX - _droneTiltX) * DRONE_TILT_LERP * dt
+  _droneTiltZ += (tiltTargetZ - _droneTiltZ) * DRONE_TILT_LERP * dt
+  const _qSpin  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), _ingenuitySpinAngle)
+  const _qTiltX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), _droneTiltX)
+  const _qTiltZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), _droneTiltZ)
+  probeMesh.quaternion.multiplyQuaternions(_qTiltX.multiply(_qTiltZ), _qSpin)
+
+  // ── Battery: drain when thrusting (spinReady), recharge when idle ──
+  const thrusting = spinReady && (keys.KeyW || keys.KeyS || keys.KeyA || keys.KeyD || keys.Space || keys.ShiftLeft || keys.ShiftRight)
+  if (thrusting) {
+    droneBattery = Math.max(0, droneBattery - DRONE_BATTERY_DRAIN * dt)
+  } else {
+    droneBattery = Math.min(1, droneBattery + DRONE_BATTERY_DRAIN * dt)
+  }
+
+  // ── HUD update ──
+  const battBar = document.getElementById('drone-battery-bar')
+  const battPct = document.getElementById('drone-battery-pct')
+  const altEl   = document.getElementById('drone-alt')
+  const hudEl   = document.getElementById('drone-hud')
+  if (battBar) { battBar.style.width = (droneBattery * 100).toFixed(0) + '%'; battBar.style.background = droneBattery > 0.25 ? '#00FFE0' : '#FF4444' }
+  if (battPct) battPct.textContent = Math.round(droneBattery * 100) + '%'
+  if (altEl && probeLaunchPos) altEl.textContent = (probeMesh.position.y - probeLaunchPos.y).toFixed(0) + 'm'
+  if (hudEl) hudEl.style.opacity = droneBattery < 0.2 ? (Math.sin(Date.now() * 0.008) * 0.5 + 0.5).toFixed(2) : '1'
+
+  // ── Battery depleted: drone falls ──
+  if (droneBattery <= 0) {
+    deactivateDroneController()
+    showToast('✗ BATTERY DEPLETED — DRONE FALLING', '#FF4444', 3000)
   }
 }
 
@@ -5303,6 +5590,9 @@ function _missedEjectWindow() {
 function _cleanupProbe() {
   const ejectBtn = document.getElementById('btn-eject-capsule')
   if (ejectBtn) ejectBtn.style.display = 'none'
+  const flyBtn = document.getElementById('btn-fly-mars')
+  if (flyBtn) flyBtn.style.display = 'none'
+  if (droneActive) deactivateDroneController()
   if (probeMesh) { scene.remove(probeMesh); probeMesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose() }); probeMesh = null }
   if (probeBody) { try { physicsWorld.removeRigidBody(probeBody) } catch(e){}; probeBody = null }
   _cleanupProbeHudRings()
@@ -5621,6 +5911,71 @@ function renderCapsuleCamScissor() {
   renderer.setViewport(0, 0, renderer.domElement.clientWidth, renderer.domElement.clientHeight)
 }
 
+function renderDroneFpvScissor() {
+  if (!droneActive || !droneFpvOpen || !probeMesh) return
+  const canvasRect = renderer.domElement.getBoundingClientRect()
+
+  // ── FRONT FPV: drone position looking in camera's horizontal direction ──
+  const frontPanel = document.getElementById('drone-fpv-front-panel')
+  if (frontPanel && frontPanel.style.display !== 'none') {
+    if (!droneFpvFrontCamera) droneFpvFrontCamera = new THREE.PerspectiveCamera(80, 1, 0.1, 600)
+    const rect = frontPanel.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize()
+      droneFpvFrontCamera.position.set(probeMesh.position.x, probeMesh.position.y + 0.15, probeMesh.position.z)
+      droneFpvFrontCamera.lookAt(
+        probeMesh.position.x + fwd.x * 30,
+        probeMesh.position.y - 0.5,
+        probeMesh.position.z + fwd.z * 30
+      )
+      droneFpvFrontCamera.up.set(0, 1, 0)
+      droneFpvFrontCamera.aspect = rect.width / rect.height
+      droneFpvFrontCamera.updateProjectionMatrix()
+      const sx = Math.round(rect.left - canvasRect.left)
+      const sy = Math.round(rect.top  - canvasRect.top)
+      renderer.setScissorTest(true)
+      renderer.setScissor(sx, sy, Math.round(rect.width), Math.round(rect.height))
+      renderer.setViewport(sx, sy, Math.round(rect.width), Math.round(rect.height))
+      renderer.render(scene, droneFpvFrontCamera)
+      renderer.setScissorTest(false)
+      renderer.setViewport(0, 0, renderer.domElement.clientWidth, renderer.domElement.clientHeight)
+      // ALT telemetry
+      const altFpv = document.getElementById('drone-fpv-front-alt')
+      if (altFpv && probeLaunchPos) altFpv.textContent = 'ALT: ' + (probeMesh.position.y - probeLaunchPos.y).toFixed(0) + 'm'
+    }
+  }
+
+  // ── BOT FPV: directly below drone, looking straight down ──
+  const botPanel = document.getElementById('drone-fpv-bot-panel')
+  if (botPanel && botPanel.style.display !== 'none') {
+    if (!droneFpvBotCamera) droneFpvBotCamera = new THREE.PerspectiveCamera(110, 1, 0.1, 400)
+    const rect = botPanel.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      droneFpvBotCamera.position.set(probeMesh.position.x, probeMesh.position.y + 0.2, probeMesh.position.z)
+      // "up" = camera forward direction so the bottom image is oriented correctly
+      const fwdBot = new THREE.Vector3(); camera.getWorldDirection(fwdBot); fwdBot.y = 0; fwdBot.normalize()
+      droneFpvBotCamera.up.copy(fwdBot)
+      droneFpvBotCamera.lookAt(probeMesh.position.x, probeMesh.position.y - 100, probeMesh.position.z)
+      droneFpvBotCamera.aspect = rect.width / rect.height
+      droneFpvBotCamera.updateProjectionMatrix()
+      const sx = Math.round(rect.left - canvasRect.left)
+      const sy = Math.round(rect.top  - canvasRect.top)
+      renderer.setScissorTest(true)
+      renderer.setScissor(sx, sy, Math.round(rect.width), Math.round(rect.height))
+      renderer.setViewport(sx, sy, Math.round(rect.width), Math.round(rect.height))
+      renderer.render(scene, droneFpvBotCamera)
+      renderer.setScissorTest(false)
+      renderer.setViewport(0, 0, renderer.domElement.clientWidth, renderer.domElement.clientHeight)
+      // GND distance telemetry
+      const gndEl = document.getElementById('drone-fpv-bot-depth')
+      if (gndEl) {
+        const gndY = getTerrainHeight(probeMesh.position.x, probeMesh.position.z)
+        gndEl.textContent = 'GND: ' + Math.max(0, probeMesh.position.y - gndY).toFixed(1) + 'm'
+      }
+    }
+  }
+}
+
 function _onSatSlotCapture() {
   console.log('[SAT_SLOT] CAPTURE! samples:', probeSamples.length)
   const samplesDelivered = probeSamples.length
@@ -5669,20 +6024,30 @@ function _missionFailed() {
 }
 
 // ──────── PROBE HUD RINGS (3D orbital rings visible in probe cam scissor) ────────
+function _makeRingLine(radius, color, opacity) {
+  const pts = []
+  const segs = 80
+  for (let i = 0; i <= segs; i++) {
+    const a = (i / segs) * Math.PI * 2
+    pts.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius))
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(pts)
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity })
+  return new THREE.Line(geo, mat)
+}
+
 function _createProbeHudRings() {
   _cleanupProbeHudRings()
-  const matGreen = new THREE.MeshBasicMaterial({ color: 0xb4ff50, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
-  const matCyan  = new THREE.MeshBasicMaterial({ color: 0x00ffe0, transparent: true, opacity: 0.2, side: THREE.DoubleSide })
   // Horizontal scan ring
-  const r1 = new THREE.Mesh(new THREE.TorusGeometry(4, 0.08, 6, 40), matGreen)
-  r1.rotation.x = Math.PI / 2
+  const r1 = _makeRingLine(4, 0xb4ff50, 0.45)
   scene.add(r1); _probeHudRings.push(r1)
   // Tilted orbital ring
-  const r2 = new THREE.Mesh(new THREE.TorusGeometry(6, 0.06, 6, 40), matCyan.clone())
+  const r2 = _makeRingLine(6, 0x00ffe0, 0.35)
   r2.rotation.x = Math.PI / 4
   scene.add(r2); _probeHudRings.push(r2)
   // Vertical ring
-  const r3 = new THREE.Mesh(new THREE.TorusGeometry(5, 0.06, 6, 40), matGreen.clone())
+  const r3 = _makeRingLine(5, 0xb4ff50, 0.35)
+  r3.rotation.z = Math.PI / 2
   scene.add(r3); _probeHudRings.push(r3)
 }
 
@@ -5774,6 +6139,12 @@ function initProbeModule() {
   if (btnFire) btnFire.addEventListener('click', startLaunchCountdown)
   const btnEject = document.getElementById('btn-eject-capsule')
   if (btnEject) btnEject.addEventListener('click', ejectCapsule)
+  // FLY MARS button (inside probe panel) — activates drone flight mode during mission
+  const btnFlyMars = document.getElementById('btn-fly-mars')
+  if (btnFlyMars) btnFlyMars.addEventListener('click', (e) => { e.currentTarget.blur(); activateDroneController() })
+  // FLY DRONE button (bottom bar) — standalone drone launch, no samples needed
+  const btnFlyDrone = document.getElementById('btn-fly-drone')
+  if (btnFlyDrone) btnFlyDrone.addEventListener('click', (e) => { e.currentTarget.blur(); launchDroneOnly() })
   // Click ANYWHERE on probe cam panel also triggers eject when in window
   const probePanelEl = document.getElementById('probe-cam-panel')
   if (probePanelEl) probePanelEl.addEventListener('click', () => {

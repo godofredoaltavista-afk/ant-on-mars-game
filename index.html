@@ -479,17 +479,18 @@
   <!-- FreeTeleport: spawn preview marker (arrow + ghost van outline) -->
   <div id="freetp-hint" style="display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:2200;font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(255,210,0,0.85);letter-spacing:0.18em;pointer-events:none;text-align:center;text-shadow:0 0 12px rgba(255,210,0,0.5);">CLICK TERRAIN TO SPAWN HERE · ESC TO CANCEL</div>
 
-  <!-- Bottom control buttons: DRIVE MARS, CONSTRUCT, LAUNCH SPECIMENS -->
-  <button id="drive-toggle" style="position:fixed;bottom:28px;left:calc(50% - 165px);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:rgba(0,170,255,0.08);color:#00AAFF;border:1px solid rgba(0,170,255,0.4);border-radius:4px;cursor:default;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);">▶ DRIVE MARS</button>
-  <button id="construct-toggle" style="position:fixed;bottom:28px;left:calc(50% + 165px);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:transparent;color:#b8ff4a;border:1px solid rgba(184,255,74,0.5);border-radius:4px;cursor:pointer;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);">⚙ CONSTRUCT</button>
-  <button id="btn-launch-specimens" style="position:fixed;bottom:28px;left:calc(50% + 280px);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:rgba(255,180,50,0.04);color:rgba(255,255,255,0.28);border:1px solid rgba(255,255,255,0.1);border-radius:4px;cursor:default;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);opacity:0.55;">⇪ LAUNCH</button>
+  <!-- Bottom control buttons: DRIVE MARS, FLY DRONE, CONSTRUCT, LAUNCH SPECIMENS -->
+  <button id="drive-toggle" style="position:fixed;bottom:28px;left:calc(50% - 210px);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:rgba(0,170,255,0.08);color:#00AAFF;border:1px solid rgba(0,170,255,0.4);border-radius:4px;cursor:default;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);">▶ DRIVE MARS</button>
+  <button id="btn-fly-drone" style="position:fixed;bottom:28px;left:calc(50%);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:rgba(0,255,224,0.07);color:#00FFE0;border:1px solid rgba(0,255,224,0.5);border-radius:4px;cursor:pointer;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);">◈ FLY DRONE</button>
+  <button id="construct-toggle" style="position:fixed;bottom:28px;left:calc(50% + 210px);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:transparent;color:#b8ff4a;border:1px solid rgba(184,255,74,0.5);border-radius:4px;cursor:pointer;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);">⚙ CONSTRUCT</button>
+  <button id="btn-launch-specimens" style="position:fixed;bottom:28px;left:calc(50% + 420px);transform:translateX(-50%);z-index:1500;font-family:'Syne','Share Tech Mono',monospace;font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 16px;background:rgba(255,180,50,0.04);color:rgba(255,255,255,0.28);border:1px solid rgba(255,255,255,0.1);border-radius:4px;cursor:default;backdrop-filter:blur(10px);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);opacity:0.55;">⇪ LAUNCH</button>
 
   <!-- Hook Crosshair -->
   <div id="hook-crosshair" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:24px;height:24px;border:1.5px solid #FF4444;border-radius:50%;pointer-events:none;z-index:1300;"></div>
   <div id="hook-hud" style="display:none;position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:1300;font-family:'Share Tech Mono',monospace;font-size:10px;color:#FF4444;letter-spacing:0.15em;pointer-events:none;">[CLICK TO HOOK]</div>
 
   <!-- Controls Bar — WASD button, positioned above the two lower buttons, draggeable -->
-  <div id="wasd-wrapper" style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:1001;cursor:grab;user-select:none;pointer-events:auto;">
+  <div id="wasd-wrapper" style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:1001;cursor:grab;user-select:none;pointer-events:auto;">
     <button id="btn-controls-toggle" style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:2px 12px;background:transparent;color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.3);border-radius:4px;cursor:pointer;backdrop-filter:blur(12px);transition:all 0.2s ease;display:flex;align-items:center;gap:6px;pointer-events:auto;"><span style="font-size:18px;display:flex;align-items:center;">🕹</span> CONTROLS</button>
   </div>
   <div id="controls-info-bar" style="display:none;position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:999;font-family:'Share Tech Mono',monospace;font-size:10px;color:rgba(0,255,224,0.6);background:rgba(0,0,0,0.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.3);padding:7px 18px;letter-spacing:0.12em;border-radius:4px;white-space:nowrap;">
@@ -534,7 +535,7 @@
   ════════════════════════════════════════════════════════════════════════ -->
 
   <!-- TORNO toggle button — centered above CONTROLS, always draggable -->
-  <button id="btn-drill" title="TORNO [T] — interior cam + sampling" style="position:fixed;bottom:68px;left:50%;transform:translateX(-50%);z-index:1102;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.15em;padding:6px 18px;background:rgba(0,255,224,0.04);color:rgba(0,255,224,0.55);border:1px solid rgba(0,255,224,0.22);border-radius:4px;cursor:pointer;backdrop-filter:blur(8px);transition:all 0.2s ease;user-select:none;">⛏ TORNO [T]</button>
+  <button id="btn-drill" title="TORNO [T] — interior cam + sampling" style="position:fixed;bottom:16px;right:116px;z-index:1102;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.15em;padding:6px 18px;background:rgba(0,255,224,0.04);color:rgba(0,255,224,0.55);border:1px solid rgba(0,255,224,0.22);border-radius:4px;cursor:pointer;backdrop-filter:blur(8px);transition:all 0.2s ease;user-select:none;">⛏ TORNO [T]</button>
 
   <!-- LIGHTS button — next to TORNO -->
   <button id="btn-rover-lights" title="Rover lights [L]" style="position:fixed;top:104px;right:116px;z-index:1102;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:7px 14px;background:rgba(0,0,0,0.82);color:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.12);border-radius:4px;cursor:pointer;backdrop-filter:blur(12px);transition:all 0.2s ease;">◈ LIGHTS [L]</button>
@@ -636,7 +637,7 @@
   </div>
 
   <!-- DRILL SAMPLES HUD — glass test-tube look, draggable, NO backdrop-filter so colors stay real -->
-  <div id="drill-hud" style="position:fixed;bottom:108px;left:50%;transform:translateX(-50%);z-index:1350;font-family:'Share Tech Mono',monospace;font-size:12px;color:rgba(255,255,255,0.9);background:rgba(0,8,20,0.22);border:1px solid rgba(0,255,224,0.45);border-radius:10px;padding:16px 22px;pointer-events:auto;user-select:none;cursor:grab;letter-spacing:0.14em;box-shadow:0 0 36px rgba(0,255,224,0.15),inset 0 0 30px rgba(0,255,224,0.05);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);">
+  <div id="drill-hud" style="position:fixed;bottom:108px;right:24px;left:auto;z-index:1350;font-family:'Share Tech Mono',monospace;font-size:12px;color:rgba(255,255,255,0.9);background:rgba(0,8,20,0.22);border:1px solid rgba(0,255,224,0.45);border-radius:10px;padding:16px 22px;pointer-events:auto;user-select:none;cursor:grab;letter-spacing:0.14em;box-shadow:0 0 36px rgba(0,255,224,0.15),inset 0 0 30px rgba(0,255,224,0.05);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);">
     <div id="drill-hud-header" style="display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:12px;font-size:10px;color:rgba(0,255,224,0.9);text-transform:uppercase;">
       <span style="font-weight:bold;">⊜ SPECIMENS</span>
       <span id="drill-hud-counter" style="color:#FFFFFF;font-weight:bold;letter-spacing:0.18em;">0 / 7</span>
@@ -757,7 +758,65 @@
     <!-- EJECT button overlay — MASSIVE when in window -->
     <button id="btn-eject-capsule" style="display:none;position:absolute;left:50%;bottom:54px;transform:translateX(-50%);z-index:5;font-family:'Share Tech Mono',monospace;font-size:24px;font-weight:bold;letter-spacing:0.32em;padding:22px 56px;background:linear-gradient(180deg,rgba(0,255,224,0.32),rgba(0,255,224,0.18));color:#FFFFFF;border:2.5px solid #00FFE0;border-radius:6px;cursor:pointer;backdrop-filter:blur(8px);animation:ejectPulse 0.45s ease infinite alternate;text-shadow:0 0 18px #00FFE0;box-shadow:0 0 60px rgba(0,255,224,0.6),inset 0 0 30px rgba(0,255,224,0.2);">◉ EJECT</button>
     <div id="probe-cam-status" style="position:absolute;left:8px;bottom:8px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(180,255,80,0.7);letter-spacing:0.12em;z-index:4;background:rgba(0,0,0,0.5);padding:3px 6px;border-radius:2px;">ALT: 0m</div>
+    <!-- FLY MARS button — appears 2.5s after launch, lets player take manual control -->
+    <button id="btn-fly-mars" style="display:none;position:absolute;left:50%;bottom:72px;transform:translateX(-50%);z-index:8;font-family:'Bebas Neue','Share Tech Mono',monospace;font-size:20px;letter-spacing:0.32em;padding:10px 36px;background:rgba(0,255,224,0.07);color:#00FFE0;border:2px solid rgba(0,255,224,0.65);border-radius:6px;cursor:pointer;text-shadow:0 0 16px #00FFE0;box-shadow:0 0 28px rgba(0,255,224,0.22),inset 0 0 14px rgba(0,255,224,0.06);transition:all 0.2s ease;pointer-events:auto;animation:drillHoldPulse 1.6s ease infinite;" onmouseover="this.style.background='rgba(0,255,224,0.16)'" onmouseout="this.style.background='rgba(0,255,224,0.07)'">
+      FLY MARS
+      <div style="font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.22em;color:rgba(0,255,224,0.55);margin-top:3px;font-weight:normal;">TAKE CONTROL OF THE DRONE</div>
+    </button>
     <div id="probe-cam-resize-handle" style="position:absolute;bottom:0;right:0;width:16px;height:16px;cursor:nwse-resize;pointer-events:auto;z-index:5;background:linear-gradient(135deg,transparent 50%,rgba(180,255,80,0.5) 50%);"></div>
+  </div>
+
+  <!-- DRONE HUD — shown when drone flight mode is active (full-screen takeover) -->
+  <div id="drone-hud" style="display:none;position:fixed;bottom:52px;left:50%;transform:translateX(-50%);z-index:2100;font-family:'Share Tech Mono',monospace;text-align:center;pointer-events:none;flex-direction:column;align-items:center;gap:5px;">
+    <div style="font-size:8px;color:rgba(0,255,224,0.55);letter-spacing:0.24em;">◈ DRONE FLIGHT  ·  WASD=MOVE  QE=YAW  SPACE/SHIFT=ALT  T=CAM  ` =EXIT</div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:9px;color:rgba(0,255,224,0.5);letter-spacing:0.12em;">BATT</span>
+      <div style="width:90px;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;">
+        <div id="drone-battery-bar" style="height:100%;width:100%;background:#00FFE0;border-radius:2px;transition:width 0.4s,background 0.4s;"></div>
+      </div>
+      <span id="drone-battery-pct" style="font-size:9px;color:#00FFE0;min-width:32px;">100%</span>
+      <span style="color:rgba(0,255,224,0.25);">|</span>
+      <span style="font-size:9px;color:rgba(0,255,224,0.5);">ALT</span>
+      <span id="drone-alt" style="font-size:9px;color:#00FFE0;min-width:32px;">0m</span>
+      <span style="color:rgba(0,255,224,0.25);">|</span>
+      <span id="drone-cam-mode" style="font-size:9px;color:#00FFE0;letter-spacing:0.1em;">3P</span>
+    </div>
+  </div>
+
+  <!-- DRONE FPV FRONT CAM — T key while drone active (same size as TORNO panels) -->
+  <div id="drone-fpv-front-panel" style="display:none;position:fixed;top:8px;left:8px;width:40vw;height:56vh;z-index:1600;pointer-events:auto;overflow:hidden;border:1px solid rgba(0,255,224,0.5);border-radius:6px;background:transparent;user-select:none;box-shadow:0 0 32px rgba(0,255,224,0.15);">
+    <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(0,255,224,0.05) 0px,rgba(0,255,224,0.05) 1px,transparent 1px,transparent 2px);pointer-events:none;z-index:2;mix-blend-mode:overlay;border-radius:6px;"></div>
+    <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 42%,rgba(0,0,0,0.5) 100%);pointer-events:none;z-index:2;border-radius:6px;"></div>
+    <div id="drone-fpv-front-header" style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(0,255,224,0.85);letter-spacing:0.2em;background:rgba(0,0,0,0.72);backdrop-filter:blur(4px);border-radius:6px 6px 0 0;cursor:grab;pointer-events:auto;">
+      <span>◉ DRONE · FWD · 80°</span>
+      <span id="drone-fpv-front-alt" style="font-size:7px;color:rgba(0,255,224,0.6);">ALT: —</span>
+    </div>
+    <div style="position:absolute;top:28px;left:0;right:0;bottom:0;pointer-events:none;z-index:3;">
+      <div style="position:absolute;top:8px;left:8px;width:24px;height:24px;border-left:1.5px solid rgba(0,255,224,0.55);border-top:1.5px solid rgba(0,255,224,0.55);"></div>
+      <div style="position:absolute;top:8px;right:8px;width:24px;height:24px;border-right:1.5px solid rgba(0,255,224,0.55);border-top:1.5px solid rgba(0,255,224,0.55);"></div>
+      <div style="position:absolute;bottom:14px;left:8px;width:24px;height:24px;border-left:1.5px solid rgba(0,255,224,0.55);border-bottom:1.5px solid rgba(0,255,224,0.55);"></div>
+      <div style="position:absolute;bottom:14px;right:8px;width:24px;height:24px;border-right:1.5px solid rgba(0,255,224,0.55);border-bottom:1.5px solid rgba(0,255,224,0.55);"></div>
+      <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;border:1px solid rgba(0,255,224,0.4);border-radius:50%;"></div>
+    </div>
+  </div>
+
+  <!-- DRONE FPV BOT CAM — T key while drone active (same size as TORNO panels) -->
+  <div id="drone-fpv-bot-panel" style="display:none;position:fixed;top:8px;right:8px;width:40vw;height:56vh;z-index:1600;pointer-events:auto;overflow:hidden;border:1px solid rgba(180,255,80,0.45);border-radius:6px;background:transparent;user-select:none;box-shadow:0 0 32px rgba(180,255,80,0.1);">
+    <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,rgba(255,255,255,0.06) 0px,rgba(255,255,255,0.06) 1px,transparent 1px,transparent 2px);pointer-events:none;z-index:2;mix-blend-mode:overlay;border-radius:6px;"></div>
+    <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 28%,rgba(0,0,0,0.55) 85%,rgba(0,0,0,0.85) 100%);pointer-events:none;z-index:2;border-radius:6px;"></div>
+    <div id="drone-fpv-bot-header" style="position:absolute;top:0;left:0;right:0;z-index:4;display:flex;align-items:center;justify-content:space-between;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(180,255,80,0.9);letter-spacing:0.2em;background:rgba(0,0,0,0.72);backdrop-filter:blur(4px);border-radius:6px 6px 0 0;cursor:grab;pointer-events:auto;">
+      <span>⊙ DRONE · NADIR · 110°</span>
+      <span id="drone-fpv-bot-depth" style="font-size:7px;color:rgba(180,255,80,0.6);">GND: —</span>
+    </div>
+    <div style="position:absolute;top:28px;left:0;right:0;bottom:0;pointer-events:none;z-index:3;">
+      <div style="position:absolute;top:8px;left:8px;width:24px;height:24px;border-left:1.5px solid rgba(180,255,80,0.5);border-top:1.5px solid rgba(180,255,80,0.5);"></div>
+      <div style="position:absolute;top:8px;right:8px;width:24px;height:24px;border-right:1.5px solid rgba(180,255,80,0.5);border-top:1.5px solid rgba(180,255,80,0.5);"></div>
+      <div style="position:absolute;bottom:14px;left:8px;width:24px;height:24px;border-left:1.5px solid rgba(180,255,80,0.5);border-bottom:1.5px solid rgba(180,255,80,0.5);"></div>
+      <div style="position:absolute;bottom:14px;right:8px;width:24px;height:24px;border-right:1.5px solid rgba(180,255,80,0.5);border-bottom:1.5px solid rgba(180,255,80,0.5);"></div>
+      <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:32px;height:32px;border:1px solid rgba(180,255,80,0.35);border-radius:50%;"></div>
+      <div style="position:absolute;left:50%;top:28px;bottom:14px;transform:translateX(-50%);width:1px;background:rgba(180,255,80,0.18);"></div>
+      <div style="position:absolute;top:50%;left:8px;right:8px;transform:translateY(-50%);height:1px;background:rgba(180,255,80,0.18);"></div>
+    </div>
   </div>
 
   <!-- CAPSULE CHASE CAM — large modal, mouse-aimed crosshair (Capa 4 v2) -->
