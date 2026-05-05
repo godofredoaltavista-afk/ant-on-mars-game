@@ -15,12 +15,11 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    minify: 'terser',
+    minify: 'oxc',
     sourcemap: true,
   },
   server: {
     open: true,
-    port: 3003,
-    allowedHosts: ['.tunnelmole.net'],
+    port: 3000,
   }
 })

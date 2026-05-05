@@ -12,6 +12,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js'
 import Stats from 'stats-gl'
 import { Fn, uniform, float, vec3, positionWorld, smoothstep, mix, mx_noise_float } from 'three/tsl'
+import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GLOBALS
@@ -19,6 +20,10 @@ import { Fn, uniform, float, vec3, positionWorld, smoothstep, mix, mx_noise_floa
 const GROUND_SIZE = 400, GROUND_SEGMENTS = 200, GROUND_Y_OFFSET = -0.15
 const HF_SIZE = 600, HF_RES = 200, HF_RETHRESHOLD = 150, GROUND_SNAP = 8
 let scene, camera, renderer, stats, perlin, orbit, transformControls
+let skyMesh, starsMesh, moonMesh
+let _starTwinklePhase = null, _starTwinkleSpeed = null, _starTwinkleType = null, _starBaseColor = null
+let _shootingStarMesh = null, _sStars = []
+let _skyAzimuth = 195
 let minimapCamera = null  // top-down orthographic camera for minimap scissor render
 let rightViewCamera = null  // side-view camera for right-view panel
 let rightViewOpen = false
@@ -84,7 +89,8 @@ let _windHeightCache = 0, _windHeightCacheX = -99999, _windHeightCacheZ = -99999
 const carSettings = { steer: 0.5, acceleration: 5, deceleration: 0.23, maxSpeed: 15, boostMultiplier: 2.5, jumpForce: 6, jumpCrouchTime: 0.05, flipForce: 2, grip: HIGH_GRIP, tireLerp: 0.3, debug: false, orbitControls: false }
 const terrainSettings = { frequency: 0.004, amplitude: 14, planetCurvature: 0 }
 const cameraSettings = { distance: 8, height: 4, lookHeight: 3.5, smoothing: 0.040 }
-const fogSettings = { color: '#000000', near: 125, far: 220 }
+const fogSettings = { color: '#000000', near: 125, far: 220, enabled: false }
+const skySettings = { sunElevation: 13, cloudCoverage: 0.34, cloudDensity: 0.95, cloudSpeed: 20, cloudScale: 41.5, moonVisible: false, exposure: 0.4, sunOrbitSpeed: 0 }
 const shadowSettings = { enabled: true, resolution: 2048, bias: -0.001, normalBias: 0.02 }
 const lightSettings = { azimuth: 320, elevation: 45 }
 const biomeSettings = { waterLevel: -5.0, sandEnd: 2.0, dirtEnd: 6.0, transitionWidth: 1.8, sandColor1: '#d4a656', sandColor2: '#e8c47a', dirtColor1: '#c48840', dirtColor2: '#b07030', grassColor1: '#a07048', grassColor2: '#8a6040', waterColor: '#7ecfcf', waterColorDeep: '#4a8a8a' }
@@ -300,10 +306,146 @@ const DRONE_TILT_LERP    = 4.0         // tilt interpolation speed (higher = sna
 async function init() {
   await RAPIER.init()
 
-  // Scene — black fog on spawn for spatial entry feeling
+  // Scene
   scene = new THREE.Scene()
-  scene.background = new THREE.Color('#000000')
-  scene.fog = new THREE.Fog('#000000', 125, 220)
+  scene.background = null  // SkyMesh es el background ahora
+  scene.fog = null  // arranca sin fog para que se vea el cielo
+
+  // ─── SkyMesh ───────────────────────────────────────────────────────────────
+  skyMesh = new SkyMesh()
+  skyMesh.scale.setScalar(10000)
+  skyMesh.material.fog = false
+  skyMesh.renderOrder = -1000
+  scene.add(skyMesh)
+  skyMesh.turbidity.value = 2.0
+  skyMesh.rayleigh.value = 1.5
+  skyMesh.mieCoefficient.value = 0.004
+  skyMesh.mieDirectionalG.value = 0.92
+  skyMesh.cloudCoverage.value = 0.34
+  skyMesh.cloudDensity.value = 0.95
+  skyMesh.cloudScale.value = 0.000415
+  skyMesh.cloudSpeed.value = 0.0002
+  skyMesh.cloudElevation.value = 0.65
+  const _sp = THREE.MathUtils.degToRad
+  skyMesh.sunPosition.value.setFromSphericalCoords(1, _sp(77), _sp(195))
+
+  // Stars — Milky Way band + constellation clusters, 3 size groups
+  ;(function() {
+    const COUNTS = [3800, 2800, 1000]
+    const SIZES  = [1.0,  2.5,  4.5]
+    const BMIN   = [0.07, 0.45, 0.04]
+    const BRANGE = [0.15, 0.55, 0.96]
+    const N_TOTAL = 7600
+    const _R = 380
+    const _mwNx=0.38, _mwNy=0.65, _mwNz=0.66
+    const _CL = Array.from({length: 30}, () => {
+      const u=Math.random(), v=Math.random()
+      const ph=Math.acos(2*u-1), th=2*Math.PI*v
+      return [Math.sin(ph)*Math.cos(th), Math.cos(ph), Math.sin(ph)*Math.sin(th)]
+    })
+    _starTwinklePhase = new Float32Array(N_TOTAL)
+    _starTwinkleSpeed = new Float32Array(N_TOTAL)
+    _starTwinkleType  = new Uint8Array(N_TOTAL)
+    _starBaseColor    = new Float32Array(N_TOTAL * 3)
+    starsMesh = new THREE.Group()
+    let gi = 0
+    for (let si = 0; si < 3; si++) {
+      const n = COUNTS[si]
+      const pos = new Float32Array(n * 3)
+      const col = new Float32Array(n * 3)
+      const midBright = BMIN[si] + BRANGE[si] * 0.5
+      for (let i = 0; i < n; i++, gi++) {
+        let px, py, pz
+        const roll = Math.random()
+        if (roll < 0.45) {
+          const cl = _CL[Math.floor(Math.random() * _CL.length)]
+          const sp2 = 0.06 + Math.random() * 0.20
+          px = cl[0]+(Math.random()-0.5)*sp2
+          py = cl[1]+(Math.random()-0.5)*sp2
+          pz = cl[2]+(Math.random()-0.5)*sp2
+          const _l = Math.sqrt(px*px+py*py+pz*pz); px/=_l; py/=_l; pz/=_l
+        } else if (roll < 0.75 && si === 0) {
+          let ok=false, att=0
+          while (!ok && att<8) {
+            const u=Math.random(), vv=Math.random()
+            const ph=Math.acos(2*u-1), th=2*Math.PI*vv
+            px=Math.sin(ph)*Math.cos(th); py=Math.cos(ph); pz=Math.sin(ph)*Math.sin(th)
+            const d=Math.abs(px*_mwNx+py*_mwNy+pz*_mwNz)
+            if (Math.random() < Math.exp(-d*d*8)) ok=true
+            att++
+          }
+        } else {
+          const u=Math.random(), vv=Math.random()
+          const ph=Math.acos(2*u-1), th=2*Math.PI*vv
+          px=Math.sin(ph)*Math.cos(th); py=Math.cos(ph); pz=Math.sin(ph)*Math.sin(th)
+        }
+        pos[i*3]=_R*px; pos[i*3+1]=_R*py; pos[i*3+2]=_R*pz
+        const tint=Math.random()
+        let tr, tg, tb
+        if (tint<0.68)       { tr=1.0;  tg=1.0;  tb=1.0 }
+        else if (tint<0.80)  { tr=0.78; tg=0.88; tb=1.0 }
+        else if (tint<0.91)  { tr=1.0;  tg=0.84; tb=0.58 }
+        else                 { tr=0.92; tg=1.0;  tb=0.82 }
+        _starBaseColor[gi*3]=tr; _starBaseColor[gi*3+1]=tg; _starBaseColor[gi*3+2]=tb
+        col[i*3]=tr*midBright; col[i*3+1]=tg*midBright; col[i*3+2]=tb*midBright
+        _starTwinklePhase[gi] = Math.random() * Math.PI * 2
+        _starTwinkleSpeed[gi] = 0.4 + Math.random() * 3.0
+        const _tp = si===0 ? [0,1,1] : [0,1,2]
+        _starTwinkleType[gi] = _tp[Math.floor(Math.random()*_tp.length)]
+      }
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
+      const mat = new THREE.PointsMaterial({
+        size: SIZES[si], sizeAttenuation: false,
+        fog: false, vertexColors: true,
+        transparent: true, opacity: 1.0,
+        depthWrite: false, depthTest: true
+      })
+      const pts = new THREE.Points(geo, mat)
+      pts.renderOrder = 1
+      starsMesh.add(pts)
+    }
+    scene.add(starsMesh)
+    const _SS_TRAIL = 30, _SS_MAX = 12
+    const _ssGeo = new THREE.BufferGeometry()
+    const _ssPosArr = new Float32Array(_SS_MAX * _SS_TRAIL * 3)
+    const _ssColArr = new Float32Array(_SS_MAX * _SS_TRAIL * 3)
+    for (let _i = 0; _i < _SS_MAX * _SS_TRAIL; _i++) _ssPosArr[_i*3+1] = -99999
+    _ssGeo.setAttribute('position', new THREE.BufferAttribute(_ssPosArr, 3))
+    _ssGeo.setAttribute('color',    new THREE.BufferAttribute(_ssColArr, 3))
+    _shootingStarMesh = new THREE.Points(_ssGeo, new THREE.PointsMaterial({
+      size: 1.5, sizeAttenuation: false, fog: false, vertexColors: true,
+      transparent: true, opacity: 1.0, depthWrite: false, depthTest: true
+    }))
+    _shootingStarMesh.renderOrder = 1
+    _shootingStarMesh.visible = false
+    scene.add(_shootingStarMesh)
+  })()
+
+  // Luna — canvas texture sprite
+  const _moonCv = document.createElement('canvas')
+  _moonCv.width = _moonCv.height = 256
+  const _mCtx = _moonCv.getContext('2d')
+  const _mGrad = _mCtx.createRadialGradient(128, 128, 0, 128, 128, 128)
+  _mGrad.addColorStop(0,    'rgba(248, 245, 232, 1.0)')
+  _mGrad.addColorStop(0.55, 'rgba(232, 228, 215, 0.95)')
+  _mGrad.addColorStop(0.8,  'rgba(215, 210, 198, 0.45)')
+  _mGrad.addColorStop(1,    'rgba(200, 196, 185, 0)')
+  _mCtx.fillStyle = _mGrad
+  _mCtx.fillRect(0, 0, 256, 256)
+  moonMesh = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(_moonCv),
+    color: 0xeeeedd, fog: false, transparent: true, depthWrite: false
+  }))
+  moonMesh.scale.set(32, 32, 1)
+  moonMesh.userData.dir = new THREE.Vector3(-0.5, 0.8, 0.3).normalize()
+  moonMesh.userData.dist = 280
+  moonMesh.visible = false
+  scene.add(moonMesh)
+  starsMesh.visible = true
+  starsMesh.children.forEach(m => { m.material.opacity = 0.3; m.material.needsUpdate = true })
+  // ──────────────────────────────────────────────────────────────────────────
 
   // Camera
   camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 500)
@@ -323,6 +465,8 @@ async function init() {
   renderer.setSize(innerWidth, innerHeight)
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
+  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMappingExposure = 0.4
   document.body.appendChild(renderer.domElement)
   await renderer.init()
 
@@ -1419,9 +1563,32 @@ function buildSettingsPanel() {
   terrF.addSlider('Amplitude', terrainSettings, 'amplitude', 0, 15, 0.5, rebuildTerrain)
 
   const fogF = createFolder('Fog')
-  fogF.addColor('Color', fogSettings, 'color', (v) => { scene.fog.color.set(v); scene.background.set(v) })
-  fogF.addSlider('Near', fogSettings, 'near', 10, 200, 1, (v) => { scene.fog.near=v })
-  fogF.addSlider('Far', fogSettings, 'far', 50, 500, 1, (v) => { scene.fog.far=v })
+  fogF.addCheckbox('Enabled', fogSettings, 'enabled', (v) => { scene.fog = v ? new THREE.Fog(fogSettings.color, fogSettings.near, fogSettings.far) : null })
+  fogF.addColor('Color', fogSettings, 'color', (v) => { if(scene.fog) scene.fog.color.set(v); if(scene.background) scene.background.set(v) })
+  fogF.addSlider('Near', fogSettings, 'near', 10, 200, 1, (v) => { if(scene.fog) scene.fog.near=v })
+  fogF.addSlider('Far', fogSettings, 'far', 50, 500, 1, (v) => { if(scene.fog) scene.fog.far=v })
+
+  const skyF = createFolder('Sky')
+  skyF.addSlider('Sun Elevation', skySettings, 'sunElevation', -10, 30, 0.5, (v) => {
+    if (!skyMesh) return
+    const phi = Math.PI/2 - THREE.MathUtils.degToRad(v)
+    skyMesh.sunPosition.value.setFromSphericalCoords(1, phi, THREE.MathUtils.degToRad(195))
+    const starOpacity = Math.max(0.3, Math.min(1, (2 - v) / 4))
+    if (starsMesh) starsMesh.children.forEach(m => { m.material.opacity = starOpacity; m.material.needsUpdate = true })
+    if (_shootingStarMesh) { _shootingStarMesh.visible = starOpacity > 0.35; if (!_shootingStarMesh.visible) _sStars = [] }
+    if (moonMesh) {
+      moonMesh.visible = starOpacity > 0.05
+      moonMesh.material.opacity = starOpacity
+      moonMesh.material.needsUpdate = true
+    }
+    skySettings.moonVisible = starOpacity > 0.05
+  })
+  skyF.addSlider('Cloud Cover', skySettings, 'cloudCoverage', 0, 1, 0.01, (v) => { if(skyMesh) skyMesh.cloudCoverage.value = v })
+  skyF.addSlider('Cloud Density', skySettings, 'cloudDensity', 0, 1, 0.01, (v) => { if(skyMesh) skyMesh.cloudDensity.value = v })
+  skyF.addSlider('Cloud Speed', skySettings, 'cloudSpeed', 0, 20, 0.5, (v) => { if(skyMesh) skyMesh.cloudSpeed.value = v * 0.00001 })
+  skyF.addSlider('Cloud Scale', skySettings, 'cloudScale', 1, 50, 0.5, (v) => { if(skyMesh) skyMesh.cloudScale.value = v * 0.00001 })
+  skyF.addSlider('Exposure', skySettings, 'exposure', 0.05, 2, 0.05, (v) => { renderer.toneMappingExposure = v })
+  skyF.addCheckbox('Moon', skySettings, 'moonVisible', (v) => { if(moonMesh) moonMesh.visible = v })
 
   const dustF = createFolder('Dust')
   dustF.addCheckbox('Enabled', dustSettings, 'enabled')
@@ -1484,8 +1651,8 @@ function buildSettingsPanel() {
   }
   function applyPreset(p) {
     fogSettings.color=p.fogColor; fogSettings.near=p.fogNear; fogSettings.far=p.fogFar
-    scene.fog.color.set(p.fogColor); scene.background.set(p.fogColor)
-    scene.fog.near=p.fogNear; scene.fog.far=p.fogFar
+    if(scene.fog) { scene.fog.color.set(p.fogColor); scene.fog.near=p.fogNear; scene.fog.far=p.fogFar }
+    if(scene.background) scene.background.set(p.fogColor)
     redAmbient.color.set(p.ambientColor); redAmbient.intensity=p.ambientIntensity
     shadowRedFill.color.set(p.hemiSky); shadowRedFill.groundColor.set(p.hemiGround)
     shadowRedFill.intensity=p.hemiIntensity
@@ -1731,10 +1898,20 @@ function animate() {
       // ── FREE ORBIT while drone active — mouse controls camera, WASD still flies ──
       orbit.target.lerp(new THREE.Vector3(probeMesh.position.x, probeMesh.position.y + 0.4, probeMesh.position.z), 0.08)
       orbit.update()
+      // Q/E rotate orbit camera around drone even in orbit mode
+      if (keys.KeyQ || keys.KeyE) {
+        const _yaw = (keys.KeyQ ? -1 : 1) * DRONE_YAW_SPEED * FIXED_DT
+        const _ot = orbit.target
+        const _dx = camera.position.x - _ot.x, _dz = camera.position.z - _ot.z
+        const _cs = Math.cos(_yaw), _sn = Math.sin(_yaw)
+        camera.position.x = _ot.x + _dx*_cs - _dz*_sn
+        camera.position.z = _ot.z + _dx*_sn + _dz*_cs
+        camera.lookAt(_ot)
+      }
       if (camMode) camMode.textContent = 'ORB'
     } else {
       // ── DEFAULT 3rd-person follow cam ──
-      const dist = 8, hOff = 2.2
+      const dist = 4, hOff = 2.2
       const idealPos = new THREE.Vector3(
         probeMesh.position.x + Math.cos(_droneOrbitAngle) * dist,
         probeMesh.position.y + hOff,
@@ -1830,6 +2007,93 @@ function animate() {
 
   // Reset if fallen
   if (chassisPos.y < -30) resetCar()
+
+  // Sky + stars + luna siguen la cámara
+  if (skyMesh) {
+    skyMesh.position.copy(camera.position)
+    if (skySettings.sunOrbitSpeed > 0) {
+      const _az0 = THREE.MathUtils.degToRad(_skyAzimuth)
+      const _hor = Math.abs(30 * Math.sin(_az0))
+      const _st = Math.min(1, _hor / 25)
+      const _sf = 0.14 + 0.86 * (_st * _st * (3 - 2 * _st))
+      _skyAzimuth = (_skyAzimuth + skySettings.sunOrbitSpeed * FIXED_DT * 0.8 * _sf) % 360
+      const _az = THREE.MathUtils.degToRad(_skyAzimuth)
+      const _elev = 30 * Math.sin(_az)
+      const _orbitPhi = Math.PI/2 - THREE.MathUtils.degToRad(_elev)
+      skyMesh.sunPosition.value.setFromSphericalCoords(1, _orbitPhi, _az)
+      skyMesh.cloudSpeed.value = skySettings.sunOrbitSpeed * 0.00001
+    } else {
+      skyMesh.cloudSpeed.value = skySettings.cloudSpeed * 0.00001
+    }
+  }
+  if (starsMesh) {
+    starsMesh.position.copy(camera.position)
+    const _starRotBase = 0.0007
+    const _starRotMul = skySettings.sunOrbitSpeed > 0 ? 1 + skySettings.sunOrbitSpeed * 0.04 : 1
+    starsMesh.rotation.y += _starRotBase * _starRotMul
+    starsMesh.rotation.x += 0.00015 * _starRotMul
+    if (starsMesh.visible && _starTwinklePhase) {
+      const _t = performance.now() * 0.001
+      const _BMIN  = [0.07, 0.45, 0.04]
+      const _BRANG = [0.15, 0.55, 0.96]
+      const _SMULT = [2.5,  1.0,  1.8]
+      let _off = 0
+      for (let _mi = 0; _mi < starsMesh.children.length; _mi++) {
+        const _bMin = _BMIN[_mi], _bRng = _BRANG[_mi], _sMul = _SMULT[_mi]
+        const _m = starsMesh.children[_mi]
+        const _c = _m.geometry.getAttribute('color')
+        const _n = _c.count
+        for (let _i = 0; _i < _n; _i++) {
+          const _gi = _off + _i
+          const _ph = _starTwinklePhase[_gi] + _t * _starTwinkleSpeed[_gi] * _sMul
+          const _ty = _starTwinkleType[_gi]
+          let _tw
+          if (_ty === 0)      _tw = Math.sin(_ph) * 0.5 + 0.5
+          else if (_ty === 1) _tw = Math.pow(Math.abs(Math.sin(_ph * 2.3)), 4)
+          else                _tw = 0.5 + 0.5 * Math.sin(_ph * 0.35)
+          const _br = _bMin + _bRng * _tw
+          _c.setXYZ(_i, _starBaseColor[_gi*3]*_br, _starBaseColor[_gi*3+1]*_br, _starBaseColor[_gi*3+2]*_br)
+        }
+        _c.needsUpdate = true
+        _off += _n
+      }
+    }
+  }
+  if (_shootingStarMesh) {
+    _shootingStarMesh.position.copy(camera.position)
+    if (starsMesh && starsMesh.visible) {
+      const _SS_TRAIL = 30, _SS_MAX = 12
+      if (_sStars.length < 8 && Math.random() < 0.022) {
+        const _sth = Math.random() * Math.PI * 2
+        const _sph = Math.acos(0.15 + Math.random() * 0.80)
+        const _r = 340, _sx = _r*Math.sin(_sph)*Math.cos(_sth), _sy = _r*Math.cos(_sph), _sz = _r*Math.sin(_sph)*Math.sin(_sth)
+        const _sp0 = new THREE.Vector3(_sx, _sy, _sz)
+        const _vd = new THREE.Vector3((Math.random()-0.5)*2,(Math.random()-0.5)*0.4,(Math.random()-0.5)*2).normalize()
+        _sStars.push({ pos:_sp0.clone(), vel:_vd.multiplyScalar(28+Math.random()*42), trail:Array.from({length:_SS_TRAIL},()=>_sp0.clone()), age:0, life:1.6+Math.random()*2.0 })
+      }
+      const _sp2 = _shootingStarMesh.geometry.getAttribute('position')
+      const _sc2 = _shootingStarMesh.geometry.getAttribute('color')
+      for (let _i = 0; _i < _SS_MAX * _SS_TRAIL; _i++) { _sp2.setY(_i, -99999); _sc2.setXYZ(_i,0,0,0) }
+      _sStars = _sStars.filter(_s => _s.age < _s.life)
+      _sStars.forEach((_s, _si) => {
+        _s.age += FIXED_DT
+        _s.pos.addScaledVector(_s.vel, FIXED_DT)
+        _s.trail.unshift(_s.pos.clone())
+        if (_s.trail.length > _SS_TRAIL) _s.trail.pop()
+        const _prog = _s.age / _s.life
+        for (let _ti = 0; _ti < _s.trail.length; _ti++) {
+          const _idx = _si * _SS_TRAIL + _ti
+          if (_idx >= _SS_MAX * _SS_TRAIL) break
+          _sp2.setXYZ(_idx, _s.trail[_ti].x, _s.trail[_ti].y, _s.trail[_ti].z)
+          const _fade = (1 - _ti / _s.trail.length) * (1 - _prog * 0.75)
+          _sc2.setXYZ(_idx, _fade, _fade, _fade * 0.88)
+        }
+      })
+      _sp2.needsUpdate = true
+      _sc2.needsUpdate = true
+    }
+  }
+  if (moonMesh) moonMesh.position.copy(camera.position).addScaledVector(moonMesh.userData.dir, moonMesh.userData.dist)
 
   // Main render
   renderer.render(scene, camera)
@@ -2151,7 +2415,7 @@ function tickWorldZones(dt) {
     zoneTransition.timer += dt
     const t = Math.min(1, zoneTransition.timer / zoneTransition.duration)
     _zoneColorCurrent.lerpColors(zoneTransition.from, zoneTransition.to, t)
-    scene.fog.color.copy(_zoneColorCurrent); scene.background.copy(_zoneColorCurrent)
+    if(scene.fog) scene.fog.color.copy(_zoneColorCurrent); if(scene.background) scene.background.copy(_zoneColorCurrent)
     if (t >= 1) zoneTransition = null
   }
 }
@@ -2905,12 +3169,12 @@ async function applyWorldData(data) {
   }
   if (data.environment) {
     if (data.environment.fogColor) {
-      scene.fog.color.set(data.environment.fogColor)
-      scene.background.set(data.environment.skyColor || data.environment.fogColor)
+      if(scene.fog) scene.fog.color.set(data.environment.fogColor)
+      if(scene.background) scene.background.set(data.environment.skyColor || data.environment.fogColor)
       fogSettings.color = data.environment.fogColor
     }
-    if (data.environment.fogNear !== undefined) { scene.fog.near = data.environment.fogNear; fogSettings.near = data.environment.fogNear }
-    if (data.environment.fogFar !== undefined) { scene.fog.far = data.environment.fogFar; fogSettings.far = data.environment.fogFar }
+    if (data.environment.fogNear !== undefined) { if(scene.fog) scene.fog.near = data.environment.fogNear; fogSettings.near = data.environment.fogNear }
+    if (data.environment.fogFar !== undefined) { if(scene.fog) scene.fog.far = data.environment.fogFar; fogSettings.far = data.environment.fogFar }
   }
   if (data.camera) {
     if (data.camera.fov) { camera.fov = data.camera.fov; camera.updateProjectionMatrix() }
@@ -4800,6 +5064,42 @@ function initRoverLights() {
     showToast(`LIGHTS: ${_LIGHT_MODES[_lightMode]}`, '#FFB432', 900)
   })
 
+  // External orbit speed slider + toggle button
+  const _orbitSlider = document.getElementById('orbit-speed-slider')
+  const _orbitVal    = document.getElementById('orbit-speed-val')
+  let   _lastOrbitSpeed = 12
+
+  function _syncOrbitIcon() {
+    const btn = document.getElementById('orbit-toggle-btn')
+    if (!btn) return
+    if (skySettings.sunOrbitSpeed > 0) btn.textContent = '◎ ORBIT'
+    else btn.textContent = (_nightMode ? '🌙' : '☀') + ' ORBIT'
+  }
+  function _setOrbitSpeed(v) {
+    skySettings.sunOrbitSpeed = v
+    if (_orbitSlider) _orbitSlider.value = String(v)
+    if (_orbitVal) _orbitVal.textContent = v > 0 ? v.toFixed(v % 1 === 0 ? 0 : 1) : 'OFF'
+    _syncOrbitIcon()
+  }
+
+  if (_orbitSlider) {
+    _orbitSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value)
+      if (v > 0) _lastOrbitSpeed = v
+      _setOrbitSpeed(v)
+    })
+    _orbitSlider.addEventListener('mousedown', (e) => e.stopPropagation())
+    _orbitSlider.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true })
+  }
+  const _orbitToggleBtn = document.getElementById('orbit-toggle-btn')
+  if (_orbitToggleBtn) {
+    _orbitToggleBtn.addEventListener('click', () => {
+      if (skySettings.sunOrbitSpeed > 0) { _lastOrbitSpeed = skySettings.sunOrbitSpeed; _setOrbitSpeed(0) }
+      else _setOrbitSpeed(_lastOrbitSpeed)
+    })
+    _orbitToggleBtn.addEventListener('mousedown', (e) => e.stopPropagation())
+  }
+
   // Night mode button
   const btnNight = document.getElementById('btn-night-mode')
   if (btnNight) btnNight.addEventListener('click', () => {
@@ -4809,7 +5109,7 @@ function initRoverLights() {
       _NIGHT_SAVE.amb = ambientLight.intensity
       _NIGHT_SAVE.red = redAmbient.intensity
       _NIGHT_SAVE.hem = shadowRedFill.intensity
-      lightSettings.elevation = -55   // sun below horizon
+      lightSettings.elevation = -55
       ambientLight.intensity  = 0.04
       redAmbient.intensity    = 0.08
       shadowRedFill.intensity = 0.04
@@ -4817,6 +5117,24 @@ function initRoverLights() {
       btnNight.style.color = '#B4FF50'
       btnNight.style.borderColor = 'rgba(180,255,80,0.7)'
       btnNight.style.background  = 'rgba(180,255,80,0.1)'
+      if (skyMesh) {
+        skySettings.sunElevation = -1
+        const phi = Math.PI/2 - THREE.MathUtils.degToRad(-1)
+        skyMesh.sunPosition.value.setFromSphericalCoords(1, phi, THREE.MathUtils.degToRad(195))
+        skyMesh.turbidity.value = 1.2
+        skyMesh.rayleigh.value = 1.5
+        skyMesh.cloudCoverage.value = 0.4
+        skyMesh.cloudDensity.value = 0.7
+        skySettings.cloudSpeed = 20; skyMesh.cloudSpeed.value = 0.0002
+      }
+      if (starsMesh) { starsMesh.visible = true; starsMesh.children.forEach(m => { m.material.opacity = 1.0; m.material.needsUpdate = true }) }
+      if (_shootingStarMesh) _shootingStarMesh.visible = true
+      if (moonMesh) { moonMesh.visible = true; moonMesh.material.opacity = 1.0; moonMesh.material.needsUpdate = true }
+      fogSettings.enabled = false
+      scene.fog = null
+      renderer.toneMappingExposure = 0.9
+      skySettings.exposure = 0.9
+      syncSettingsPanel(); _syncOrbitIcon()
     } else {
       lightSettings.elevation = _NIGHT_SAVE.el
       ambientLight.intensity  = _NIGHT_SAVE.amb
@@ -4826,6 +5144,22 @@ function initRoverLights() {
       btnNight.style.color = 'rgba(255,255,255,0.55)'
       btnNight.style.borderColor = 'rgba(255,255,255,0.3)'
       btnNight.style.background  = 'transparent'
+      if (skyMesh) {
+        skySettings.sunElevation = 13
+        const phi = Math.PI/2 - THREE.MathUtils.degToRad(13)
+        skyMesh.sunPosition.value.setFromSphericalCoords(1, phi, THREE.MathUtils.degToRad(195))
+        skyMesh.turbidity.value = 2.0
+        skyMesh.rayleigh.value = 1.5
+        skyMesh.cloudCoverage.value = 0.34
+        skyMesh.cloudDensity.value = 0.95
+        skySettings.cloudSpeed = 20; skyMesh.cloudSpeed.value = 0.0002
+      }
+      if (starsMesh) { starsMesh.visible = true; starsMesh.children.forEach(m => { m.material.opacity = 0.3; m.material.needsUpdate = true }) }
+      if (_shootingStarMesh) { _shootingStarMesh.visible = false; _sStars = [] }
+      if (moonMesh) { moonMesh.visible = false; moonMesh.material.opacity = 0 }
+      renderer.toneMappingExposure = 0.4
+      skySettings.exposure = 0.4
+      syncSettingsPanel(); _syncOrbitIcon()
     }
   })
 }
@@ -5216,7 +5550,7 @@ async function launchProbe() {
       const model = gltf.scene
       const box = new THREE.Box3().setFromObject(model)
       const size = new THREE.Vector3(); box.getSize(size)
-      model.scale.setScalar(2.5 / Math.max(size.x, size.y, size.z, 0.01))
+      model.scale.setScalar(1.35 / Math.max(size.x, size.y, size.z, 0.01))
       const box2 = new THREE.Box3().setFromObject(model)
       const center = new THREE.Vector3(); box2.getCenter(center)
       model.position.x = -center.x
@@ -5447,7 +5781,7 @@ async function launchDroneOnly() {
       const model = gltf.scene
       const box = new THREE.Box3().setFromObject(model)
       const s = new THREE.Vector3(); box.getSize(s)
-      model.scale.setScalar(2.5 / Math.max(s.x, s.y, s.z, 0.01))
+      model.scale.setScalar(1.35 / Math.max(s.x, s.y, s.z, 0.01))
       const box2 = new THREE.Box3().setFromObject(model)
       const c = new THREE.Vector3(); box2.getCenter(c)
       model.position.x = -c.x
@@ -6024,7 +6358,7 @@ function _missionFailed() {
 }
 
 // ──────── PROBE HUD RINGS (3D orbital rings visible in probe cam scissor) ────────
-function _makeRingLine(radius, color, opacity) {
+function _makeRingLine(radius, color, opacity, dashed = false) {
   const pts = []
   const segs = 80
   for (let i = 0; i <= segs; i++) {
@@ -6032,21 +6366,27 @@ function _makeRingLine(radius, color, opacity) {
     pts.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius))
   }
   const geo = new THREE.BufferGeometry().setFromPoints(pts)
+  if (dashed) {
+    const mat = new THREE.LineDashedMaterial({ color, transparent: true, opacity, dashSize: 0.5, gapSize: 0.35 })
+    const line = new THREE.Line(geo, mat)
+    line.computeLineDistances()
+    return line
+  }
   const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity })
   return new THREE.Line(geo, mat)
 }
 
 function _createProbeHudRings() {
   _cleanupProbeHudRings()
-  // Horizontal scan ring
-  const r1 = _makeRingLine(4, 0xb4ff50, 0.45)
+  // Horizontal scan ring — white
+  const r1 = _makeRingLine(4, 0xffffff, 0.6)
   scene.add(r1); _probeHudRings.push(r1)
-  // Tilted orbital ring
-  const r2 = _makeRingLine(6, 0x00ffe0, 0.35)
+  // Tilted orbital ring — cyan dashed
+  const r2 = _makeRingLine(6, 0x00ffe0, 0.6, true)
   r2.rotation.x = Math.PI / 4
   scene.add(r2); _probeHudRings.push(r2)
-  // Vertical ring
-  const r3 = _makeRingLine(5, 0xb4ff50, 0.35)
+  // Vertical ring — white
+  const r3 = _makeRingLine(5, 0xffffff, 0.6)
   r3.rotation.z = Math.PI / 2
   scene.add(r3); _probeHudRings.push(r3)
 }
