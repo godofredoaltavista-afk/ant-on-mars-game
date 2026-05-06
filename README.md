@@ -137,7 +137,11 @@ ant-on-mars/
 </tr>
 </table>
 
-## Run local
+## Dev
+
+```
+🌐  Live  →  https://ant-on-mars-game.vercel.app
+```
 
 ```bash
 npm install
