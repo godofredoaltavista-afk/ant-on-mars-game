@@ -129,6 +129,17 @@ Incluye: vans naranja/roja, ruedas, manos en montaña, mate, La Bombonera, lava,
 
 ---
 
+## Gallery
+
+<table>
+<tr>
+<td width="50%"><img src="docs/art-01.svg" width="100%"/></td>
+<td width="50%"><img src="docs/art-02.svg" width="100%"/></td>
+</tr>
+</table>
+
+---
+
 ## Correr local
 
 ```bash
