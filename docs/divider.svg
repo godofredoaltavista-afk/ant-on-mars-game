@@ -1,0 +1,9 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 40" width="1536" height="40">
+  <defs>
+    <filter id="ink" x="-5%" y="-100%" width="110%" height="300%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" seed="5" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="18" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+  <rect x="0" y="18" width="1536" height="4" fill="#c8f135" rx="2" filter="url(#ink)" opacity="0.75"/>
+</svg>
