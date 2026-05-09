@@ -253,12 +253,18 @@
     <div class="ctor-panel-body" style="padding:10px;display:flex;flex-direction:column;gap:8px;">
       <div class="ctor-drop-zone" id="ctor-drop-zone" style="border:1px dashed rgba(184,255,74,0.35);border-radius:4px;padding:12px 8px;text-align:center;color:rgba(184,255,74,0.5);font-size:9px;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;">◆ DROP .GLB HERE<br><span style="color:rgba(184,255,74,0.3);font-size:8px;">o hacé click para explorar</span></div>
       <input type="file" id="ctor-file-input" style="display:none;" accept=".glb" />
+      <button id="ctor-folder-btn" style="width:100%;padding:7px;background:rgba(0,255,224,0.06);border:1px solid rgba(0,255,224,0.2);border-radius:4px;color:rgba(0,255,224,0.6);font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(0,255,224,0.12)'" onmouseout="this.style.background='rgba(0,255,224,0.06)'">📂 CARGAR CARPETA LOCAL</button>
       <div class="ctor-loading-msg" id="ctor-loading-msg" style="color:#b8ff4a;font-size:9px;letter-spacing:0.1em;text-align:center;padding:6px 0;display:none;">◌ CARGANDO…</div>
       <div class="ctor-progress" id="ctor-progress" style="height:2px;background:rgba(255,255,255,0.08);border-radius:1px;overflow:hidden;display:none;"><div class="ctor-progress-bar" id="ctor-progress-bar" style="height:100%;background:#b8ff4a;width:0%;transition:width 0.2s ease;"></div></div>
       <div style="font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.1em;margin-top:4px;">CATÁLOGO LOCAL</div>
       <div id="ctor-catalog-list"></div>
       <div style="font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.1em;margin-top:8px;">OBJETOS EN ESCENA</div>
       <div class="ctor-obj-list" id="ctor-obj-list" style="display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(184,255,74,0.2) transparent;"><div style="color:rgba(255,255,255,0.2);font-size:9px;text-align:center;padding:8px;">ninguno aún</div></div>
+      <div style="display:flex;gap:4px;margin-top:6px;">
+        <button id="ctor-world-export-btn" style="flex:1;padding:6px;background:rgba(184,255,80,0.06);border:1px solid rgba(184,255,80,0.25);border-radius:4px;color:#B4FF50;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(184,255,80,0.14)'" onmouseout="this.style.background='rgba(184,255,80,0.06)'">↓ EXPORT JSON</button>
+        <button id="ctor-world-import-btn" style="flex:1;padding:6px;background:rgba(0,170,255,0.06);border:1px solid rgba(0,170,255,0.25);border-radius:4px;color:#00AAFF;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(0,170,255,0.14)'" onmouseout="this.style.background='rgba(0,170,255,0.06)'">↑ IMPORT JSON</button>
+        <input type="file" id="ctor-world-import-input" style="display:none;" accept=".json" />
+      </div>
     </div>
   </div>
 
@@ -953,6 +959,143 @@
     /* TORNO split wrap needs flex when shown */
     #drill-split-wrap { display: none; }
     #drill-split-wrap.open { display: flex !important; }
+
+    /* PLACE MODE — NASA-style HUD with corner readouts + center confirm */
+    body.place-mode-active .ctor-panel,
+    body.place-mode-active #ctor-panel-zones,
+    body.place-mode-active #ctor-panel-inspector { opacity:0.12; pointer-events:none; transition:opacity 0.3s ease; }
+    body.place-mode-active .ctor-panel:hover,
+    body.place-mode-active #ctor-panel-zones:hover,
+    body.place-mode-active #ctor-panel-inspector:hover { opacity:0.45; }
+    #place-mode-overlay { display:none; position:fixed; inset:0; z-index:8000; pointer-events:none; }
+    #place-mode-overlay .pm-corner {
+      position:absolute; padding:10px 16px;
+      font-family:'JetBrains Mono','Share Tech Mono',monospace; font-size:9px; letter-spacing:3px;
+      color:rgba(255,255,255,0.55); text-shadow:0 0 8px rgba(0,0,0,0.9);
+      border:1px solid rgba(255,255,255,0.18);
+      background:rgba(8,12,16,0.4); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    }
+    #place-mode-overlay .pm-corner::before, #place-mode-overlay .pm-corner::after {
+      content:''; position:absolute; width:8px; height:8px; border:1px solid rgba(255,255,255,0.7);
+    }
+    #place-mode-overlay .pm-tl { top:18px; left:18px; }
+    #place-mode-overlay .pm-tl::before { top:-2px; left:-2px; border-right:none; border-bottom:none; }
+    #place-mode-overlay .pm-tr { top:18px; right:18px; }
+    #place-mode-overlay .pm-tr::before { top:-2px; right:-2px; border-left:none; border-bottom:none; }
+    #place-mode-overlay .pm-bl { bottom:18px; left:18px; }
+    #place-mode-overlay .pm-bl::before { bottom:-2px; left:-2px; border-right:none; border-top:none; }
+    #place-mode-overlay .pm-br { bottom:18px; right:18px; }
+    #place-mode-overlay .pm-br::before { bottom:-2px; right:-2px; border-left:none; border-top:none; }
+    #place-mode-overlay .pm-center {
+      position:absolute; left:50%; bottom:50px; transform:translateX(-50%);
+      display:flex; flex-direction:column; align-items:center; gap:10px;
+    }
+    #place-mode-overlay .pm-btn {
+      padding:18px 42px;
+      background:linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(0,255,224,0.08) 50%, rgba(255,200,40,0.08) 100%);
+      border:1px solid rgba(255,255,255,0.35); border-radius:2px;
+      backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+      font-family:'Bebas Neue','Syne',sans-serif; font-size:18px; letter-spacing:6px;
+      color:rgba(255,255,255,0.95); text-shadow:0 0 18px rgba(0,255,224,0.5);
+      box-shadow:0 0 32px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.18);
+      animation:pm-btn-shimmer 3.4s ease-in-out infinite;
+    }
+    @keyframes pm-btn-shimmer { 0%,100% { box-shadow:0 0 32px rgba(0,255,224,0.18), inset 0 1px 0 rgba(255,255,255,0.18) } 50% { box-shadow:0 0 56px rgba(255,200,40,0.28), inset 0 1px 0 rgba(255,255,255,0.3) } }
+    #place-mode-overlay .pm-hint {
+      font-family:'JetBrains Mono','Share Tech Mono',monospace; font-size:9px; letter-spacing:3px;
+      color:rgba(255,255,255,0.4); text-shadow:0 0 8px rgba(0,0,0,0.9);
+    }
+    /* Crosshair in screen center */
+    body.place-mode-active::after {
+      content:''; position:fixed; left:50%; top:50%; width:16px; height:16px;
+      transform:translate(-50%,-50%);
+      border:1px solid rgba(255,255,255,0.5); border-radius:50%;
+      pointer-events:none; z-index:7990;
+      box-shadow:0 0 16px rgba(255,255,255,0.2);
+    }
+  </style>
+
+  <!-- GLB VISOR MODAL — full 3D viewer with orbit controls + sidebar -->
+  <div id="glb-visor" style="display:none;position:fixed;inset:0;z-index:5000;background:rgba(0,0,0,0.94);backdrop-filter:blur(8px);flex-direction:column;font-family:'Share Tech Mono',monospace;">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid rgba(184,255,74,0.15);background:rgba(0,0,0,0.6);flex-shrink:0;">
+      <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:4px;color:#B4FF50;text-shadow:0 0 16px rgba(184,255,74,0.4);">◈ VISOR</span>
+      <span id="visor-title" style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:#00FFE0;text-shadow:0 0 12px rgba(0,255,224,0.4);"></span>
+      <span id="visor-subtitle" style="font-size:9px;color:rgba(255,255,255,0.25);"></span>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+        <span style="font-size:9px;color:rgba(255,255,255,0.2);letter-spacing:0.15em;">DRAG → ROT · SCROLL → ZOOM · SHIFT+DRAG → PAN</span>
+        <button id="visor-close" style="background:none;border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4);font-family:'Share Tech Mono',monospace;font-size:10px;padding:4px 12px;cursor:pointer;border-radius:3px;letter-spacing:0.1em;transition:all 0.15s;">✕ CERRAR</button>
+      </div>
+    </div>
+    <!-- Body -->
+    <div style="flex:1;display:grid;grid-template-columns:1fr 280px;overflow:hidden;min-height:0;">
+      <!-- Canvas area -->
+      <div id="visor-canvas-wrap" style="position:relative;overflow:hidden;background:#020202;">
+        <!-- canvas injected by JS -->
+        <div id="visor-hud" style="position:absolute;top:14px;left:16px;font-size:10px;color:rgba(255,255,255,0.25);line-height:1.9;pointer-events:none;letter-spacing:0.08em;">
+          POLY<span style="color:rgba(255,255,255,0.1);margin:0 6px;">·</span><b id="visor-poly" style="color:#00FFE0;">—</b><br>
+          VERTS<span style="color:rgba(255,255,255,0.1);margin:0 6px;">·</span><b id="visor-verts" style="color:#00FFE0;">—</b><br>
+          MATS<span style="color:rgba(255,255,255,0.1);margin:0 6px;">·</span><b id="visor-mats" style="color:#00FFE0;">—</b><br>
+          MESHES<span style="color:rgba(255,255,255,0.1);margin:0 6px;">·</span><b id="visor-meshes" style="color:#00FFE0;">—</b>
+        </div>
+        <div id="visor-loading" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:rgba(0,255,224,0.4);font-size:11px;letter-spacing:0.2em;gap:10px;">
+          <div style="width:32px;height:32px;border:2px solid rgba(0,255,224,0.15);border-top-color:#00FFE0;border-radius:50%;animation:visorSpin 0.8s linear infinite;"></div>
+          CARGANDO ASSET…
+        </div>
+      </div>
+      <!-- Sidebar -->
+      <div style="border-left:1px solid rgba(255,255,255,0.06);padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;background:rgba(5,5,5,0.8);scrollbar-width:thin;scrollbar-color:rgba(184,255,74,0.15) transparent;">
+        <!-- Clean name -->
+        <div>
+          <div style="font-size:8px;letter-spacing:0.2em;color:rgba(255,255,255,0.2);margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.04);padding-bottom:4px;">NOMBRE LIMPIO</div>
+          <div style="display:flex;gap:4px;">
+            <input id="visor-name-input" type="text" style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(184,255,74,0.2);color:#B4FF50;font-family:'Share Tech Mono',monospace;font-size:12px;padding:5px 8px;outline:none;border-radius:2px;letter-spacing:0.05em;" />
+            <button id="visor-name-save" style="background:rgba(184,255,74,0.08);border:1px solid rgba(184,255,74,0.25);color:#B4FF50;font-family:'Share Tech Mono',monospace;font-size:9px;padding:4px 8px;cursor:pointer;border-radius:2px;">OK</button>
+          </div>
+        </div>
+        <!-- Category -->
+        <div>
+          <div style="font-size:8px;letter-spacing:0.2em;color:rgba(255,255,255,0.2);margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.04);padding-bottom:4px;">CATEGORÍA</div>
+          <select id="visor-cat" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:rgba(0,255,224,0.8);font-family:'Share Tech Mono',monospace;font-size:10px;padding:5px 8px;outline:none;border-radius:2px;cursor:pointer;">
+            <option value="other">OTHER</option>
+            <option value="vehicle">VEHICLE</option>
+            <option value="environment">ENVIRONMENT</option>
+            <option value="prop">PROP</option>
+            <option value="character">CHARACTER</option>
+          </select>
+        </div>
+        <!-- File info -->
+        <div>
+          <div style="font-size:8px;letter-spacing:0.2em;color:rgba(255,255,255,0.2);margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.04);padding-bottom:4px;">INFO</div>
+          <div style="display:flex;flex-direction:column;gap:3px;">
+            <div style="display:flex;justify-content:space-between;font-size:9px;padding:2px 0;"><span style="color:rgba(255,255,255,0.25);">ARCHIVO</span><span id="visor-info-name" style="color:#00FFE0;font-size:8px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">—</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;padding:2px 0;"><span style="color:rgba(255,255,255,0.25);">FUENTE</span><span id="visor-info-source" style="color:#00FFE0;">—</span></div>
+          </div>
+        </div>
+        <!-- Geometry -->
+        <div>
+          <div style="font-size:8px;letter-spacing:0.2em;color:rgba(255,255,255,0.2);margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.04);padding-bottom:4px;">GEOMETRÍA</div>
+          <div style="display:flex;flex-direction:column;gap:3px;">
+            <div style="display:flex;justify-content:space-between;font-size:9px;padding:2px 0;"><span style="color:rgba(255,255,255,0.25);">TRIÁNGULOS</span><span id="visor-info-poly" style="color:#B4FF50;">—</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;padding:2px 0;"><span style="color:rgba(255,255,255,0.25);">VÉRTICES</span><span id="visor-info-verts" style="color:#B4FF50;">—</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;padding:2px 0;"><span style="color:rgba(255,255,255,0.25);">MESHES</span><span id="visor-info-meshes" style="color:#B4FF50;">—</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;padding:2px 0;"><span style="color:rgba(255,255,255,0.25);">MATERIALES</span><span id="visor-info-mats" style="color:#B4FF50;">—</span></div>
+          </div>
+        </div>
+        <!-- Actions -->
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:6px;padding-top:10px;">
+          <button id="visor-screenshot" style="padding:9px;background:transparent;border:1px solid rgba(0,255,224,0.25);color:#00FFE0;font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:2px;cursor:pointer;border-radius:3px;transition:all 0.15s;">◎ SCREENSHOT</button>
+          <button id="visor-add-scene" style="padding:10px;background:#B4FF50;border:none;color:#000;font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:3px;cursor:pointer;border-radius:3px;transition:all 0.15s;">+ AGREGAR A ESCENA</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <style>
+    #glb-visor.open { display: flex !important; }
+    @keyframes visorSpin { to { transform: rotate(360deg); } }
+    #visor-screenshot:hover { background: rgba(0,255,224,0.08); }
+    #visor-add-scene:hover { background: #d4ff6a; }
+    #visor-close:hover { border-color: rgba(255,68,68,0.5); color: #FF4444; }
   </style>
 
   <script type="module" src="/src/main.js"></script>

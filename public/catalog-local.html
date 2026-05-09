@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLB LOCAL VIEWER · ANT ON MARS</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+:root { --cyan:#00FFE0; --lime:#B4FF50; --red:#C0392B; --black:#000; --darker:#050505; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--darker); color:var(--cyan); font-family:'Share Tech Mono',monospace; overflow-x:hidden; }
+body::before { content:''; position:fixed; inset:0; pointer-events:none; z-index:9999; background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,224,0.012) 2px,rgba(0,255,224,0.012) 4px); }
+
+header { position:sticky; top:0; z-index:100; background:var(--darker); border-bottom:1px solid rgba(0,255,224,0.3); padding:12px 24px; display:flex; align-items:center; gap:18px; }
+.logo { font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:4px; color:var(--cyan); text-shadow:0 0 18px rgba(0,255,224,0.4); }
+.logo span { color:var(--lime); }
+.header-stats { display:flex; gap:18px; font-size:10px; color:#444; }
+.header-stats b { color:var(--cyan); }
+.header-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
+
+input[type=search] { background:transparent; border:1px solid #222; color:var(--cyan); font-family:'Share Tech Mono',monospace; font-size:11px; padding:6px 12px; outline:none; width:200px; }
+input[type=search]:focus { border-color:var(--cyan); }
+input[type=search]::placeholder { color:#333; }
+
+.grid-size { display:flex; align-items:center; gap:6px; font-size:9px; color:#333; }
+.grid-size input[type=range] { width:80px; accent-color:var(--cyan); cursor:pointer; }
+
+.btn-primary { background:transparent; border:1px solid var(--lime); color:var(--lime); font-family:'Bebas Neue',sans-serif; font-size:13px; letter-spacing:2px; padding:7px 18px; cursor:pointer; transition:all 0.15s; }
+.btn-primary:hover { background:var(--lime); color:var(--black); }
+
+.toolbar { padding:14px 24px; border-bottom:1px solid #111; background:#070707; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.tabs { display:flex; gap:2px; }
+.tab { font-family:'Bebas Neue',sans-serif; font-size:11px; letter-spacing:2px; padding:6px 12px; cursor:pointer; color:#333; border:1px solid #161616; background:none; transition:all 0.15s; }
+.tab:hover { color:#666; border-color:#222; }
+.tab.active { color:var(--cyan); border-color:var(--cyan); }
+
+main { padding:18px 24px 80px; }
+
+.empty { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:120px 20px; color:#1a1a1a; gap:16px; text-align:center; }
+.empty .icon { font-size:60px; color:#222; }
+.empty h3 { font-family:'Bebas Neue',sans-serif; font-size:24px; letter-spacing:5px; color:#2a2a2a; }
+.empty p { font-size:11px; color:#222; max-width:360px; line-height:1.7; }
+.empty .btn-primary { margin-top:8px; font-size:14px; padding:10px 24px; }
+
+.asset-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+
+/* Flip card with rarity tints */
+.asset-card { background:transparent; cursor:pointer; position:relative; perspective:1200px; animation:cardIn 0.25s ease both; }
+.asset-card .card-inner { position:relative; width:100%; padding-top:120%; transition:transform 0.55s cubic-bezier(.2,.8,.2,1); transform-style:preserve-3d; }
+.asset-card.flipped .card-inner { transform:rotateY(180deg); }
+.asset-card .card-back, .asset-card .card-front {
+  position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+  border:1px solid #131313; overflow:hidden;
+  display:flex; flex-direction:column;
+}
+.asset-card .card-front { transform:rotateY(180deg); background:#040404; }
+.asset-card .card-back { background:linear-gradient(135deg, #0a0a0a 0%, #060606 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:14px 12px; gap:10px; text-align:center; }
+.asset-card .card-back::before { content:''; position:absolute; inset:0; background:radial-gradient(circle at 50% 30%, var(--rarity-glow,rgba(0,255,224,0.12)), transparent 70%); pointer-events:none; }
+.asset-card .card-rarity-badge { font-size:32px; line-height:1; color:var(--rarity-color,#00FFE0); text-shadow:0 0 18px var(--rarity-glow,rgba(0,255,224,0.5)); margin-bottom:6px; }
+.asset-card .card-back-name { font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:1.5px; color:var(--rarity-color,#00FFE0); text-shadow:0 0 8px var(--rarity-glow,rgba(0,255,224,0.4)); line-height:1.15; max-height:3.5em; overflow:hidden; }
+.asset-card .card-back-meta { font-size:8px; letter-spacing:1.5px; color:rgba(255,255,255,0.35); }
+.asset-card .card-back-hint { font-size:8px; letter-spacing:2px; color:var(--rarity-color,#00FFE0); opacity:0.4; margin-top:auto; padding-top:8px; }
+.asset-card:hover { z-index:50; }
+.asset-card:hover .card-inner { box-shadow:0 0 36px var(--rarity-glow,rgba(0,255,224,0.4)); }
+
+/* Rarity-specific border colors and glow */
+.asset-card.rarity-classic { --rarity-color:#00FFE0; --rarity-glow:rgba(0,255,224,0.4); }
+.asset-card.rarity-violet  { --rarity-color:#B450FF; --rarity-glow:rgba(180,80,255,0.5); }
+.asset-card.rarity-gold    { --rarity-color:#FFC828; --rarity-glow:rgba(255,200,40,0.6); }
+.asset-card.rarity-classic .card-front, .asset-card.rarity-classic .card-back { border-color:rgba(0,255,224,0.15); }
+.asset-card.rarity-violet .card-front, .asset-card.rarity-violet .card-back { border-color:rgba(180,80,255,0.18); }
+.asset-card.rarity-gold .card-front, .asset-card.rarity-gold .card-back { border-color:rgba(255,200,40,0.25); }
+.asset-card.flipped.rarity-classic .card-front { border-color:rgba(0,255,224,0.5); box-shadow:inset 0 0 24px rgba(0,255,224,0.12); }
+.asset-card.flipped.rarity-violet .card-front { border-color:rgba(180,80,255,0.6); box-shadow:inset 0 0 28px rgba(180,80,255,0.15); }
+.asset-card.flipped.rarity-gold .card-front { border-color:rgba(255,200,40,0.7); box-shadow:inset 0 0 32px rgba(255,200,40,0.18); animation:goldShimmer 2.5s ease-in-out infinite; }
+@keyframes goldShimmer { 0%,100% { box-shadow:inset 0 0 32px rgba(255,200,40,0.18) } 50% { box-shadow:inset 0 0 48px rgba(255,200,40,0.32) } }
+
+@keyframes cardIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+.card-thumb { position:relative; width:100%; flex:1; background:#040404; overflow:hidden; }
+.card-thumb canvas { position:absolute; inset:0; width:100%!important; height:100%!important; }
+.card-name-overlay { position:absolute; left:0; right:0; bottom:0; padding:9px 12px; font-family:'Bebas Neue',sans-serif; font-size:13px; letter-spacing:1.4px; color:var(--rarity-color,#00FFE0); text-shadow:0 0 8px var(--rarity-glow,rgba(0,255,224,0.4)); background:linear-gradient(to top, rgba(0,0,0,0.92), transparent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; }
+.card-loader { position:absolute; top:10px; right:10px; pointer-events:none; }
+.card-spinner { width:16px; height:16px; border:2px solid rgba(255,255,255,0.08); border-top-color:var(--rarity-color,#00FFE0); border-radius:50%; animation:spin 0.9s linear infinite; box-shadow:0 0 12px var(--rarity-glow,rgba(0,255,224,0.4)); }
+
+.card-actions { display:flex; gap:1px; border-top:1px solid rgba(255,255,255,0.06); flex-shrink:0; background:#050505; }
+.card-btn { flex:1; background:transparent; border:none; color:#555; font-family:'Share Tech Mono',monospace; font-size:9px; padding:7px 0; cursor:pointer; letter-spacing:1px; transition:all 0.15s; border-right:1px solid rgba(255,255,255,0.04); }
+.card-btn:last-child { border-right:none; }
+.card-btn:hover { color:var(--rarity-color,#00FFE0); background:rgba(255,255,255,0.04); }
+.card-btn.primary { color:var(--lime); }
+.card-btn.primary:hover { background:rgba(184,255,80,0.1); color:var(--lime); }
+
+/* MODAL VISOR */
+#modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.97); z-index:2000; flex-direction:column; }
+#modal.open { display:flex; }
+.modal-header { display:flex; align-items:center; gap:14px; padding:12px 22px; border-bottom:1px solid #111; flex-shrink:0; background:#040404; }
+.modal-title { font-family:'Bebas Neue',sans-serif; font-size:24px; letter-spacing:4px; color:var(--cyan); text-shadow:0 0 20px rgba(0,255,224,0.5); }
+.modal-subtitle { font-size:9px; color:#333; }
+.modal-close { margin-left:auto; background:none; border:1px solid #222; color:#444; font-family:'Share Tech Mono',monospace; padding:6px 14px; cursor:pointer; font-size:10px; transition:all 0.15s; }
+.modal-close:hover { border-color:var(--red); color:var(--red); }
+
+.modal-body { flex:1; display:grid; grid-template-columns:1fr 320px; overflow:hidden; min-height:0; }
+#modal-canvas-wrap { position:relative; overflow:hidden; background:#020202; cursor:grab; }
+#modal-canvas-wrap.grabbing { cursor:grabbing; }
+#modal-canvas-wrap canvas { position:absolute; inset:0; width:100%!important; height:100%!important; }
+
+.modal-hud { position:absolute; top:14px; left:18px; font-size:10px; color:rgba(255,255,255,0.3); line-height:1.9; pointer-events:none; letter-spacing:0.08em; }
+.modal-hud b { color:var(--cyan); }
+.modal-hint { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); font-size:9px; color:#1a1a1a; letter-spacing:2px; white-space:nowrap; pointer-events:none; }
+.modal-loading { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; color:rgba(0,255,224,0.5); font-size:11px; letter-spacing:0.2em; gap:12px; }
+.modal-spinner { width:30px; height:30px; border:2px solid rgba(0,255,224,0.15); border-top-color:var(--cyan); border-radius:50%; animation:spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg) } }
+
+.modal-sidebar { border-left:1px solid #111; padding:18px; overflow-y:auto; display:flex; flex-direction:column; gap:14px; background:#050505; scrollbar-width:thin; }
+.sb-block h4 { font-family:'Bebas Neue',sans-serif; font-size:10px; letter-spacing:3px; color:#333; margin-bottom:7px; border-bottom:1px solid #111; padding-bottom:4px; }
+.info-row { display:flex; justify-content:space-between; font-size:9px; padding:3px 0; border-bottom:1px solid #0a0a0a; }
+.info-row .k { color:#333; }
+.info-row .v { color:var(--cyan); font-family:'Share Tech Mono',monospace; }
+.name-edit { display:flex; gap:4px; }
+.name-edit input { flex:1; background:#040404; border:1px solid #1a1a1a; color:var(--lime); font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:1.5px; padding:6px 9px; outline:none; }
+.name-edit input:focus { border-color:var(--lime); }
+.name-edit button { background:transparent; border:1px solid #1a1a1a; color:#444; font-family:'Share Tech Mono',monospace; font-size:9px; padding:5px 10px; cursor:pointer; transition:all 0.15s; }
+.name-edit button:hover { border-color:var(--lime); color:var(--lime); }
+
+/* CROP CONTROLS */
+.crop-mode { display:flex; gap:3px; margin-bottom:8px; }
+.crop-mode button { flex:1; background:transparent; border:1px solid #1a1a1a; color:#333; font-family:'Bebas Neue',sans-serif; font-size:11px; letter-spacing:1px; padding:6px 0; cursor:pointer; transition:all 0.15s; }
+.crop-mode button.active { border-color:var(--cyan); color:var(--cyan); background:rgba(0,255,224,0.05); }
+.crop-mode button:hover { color:var(--cyan); }
+.slider-row { display:flex; align-items:center; gap:8px; font-size:9px; color:#444; padding:3px 0; }
+.slider-row label { width:36px; color:#333; }
+.slider-row input[type=range] { flex:1; accent-color:var(--cyan); }
+.slider-row span { width:32px; text-align:right; color:var(--cyan); font-family:'Share Tech Mono',monospace; }
+
+.sb-actions { display:flex; flex-direction:column; gap:10px; margin-top:auto; padding-top:14px; }
+.btn-act {
+  padding:16px 12px;
+  background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.18);
+  color:rgba(255,255,255,0.78); font-family:'Bebas Neue',sans-serif; font-size:13px; letter-spacing:4px;
+  cursor:pointer; transition:all 0.22s ease; backdrop-filter:blur(6px);
+}
+.btn-act:hover { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.45); color:#fff; letter-spacing:5px; }
+.btn-act.lime { border-color:rgba(184,255,80,0.35); color:rgba(184,255,80,0.85); }
+.btn-act.lime:hover { background:rgba(184,255,80,0.08); border-color:rgba(184,255,80,0.7); color:var(--lime); }
+.btn-act.send {
+  background:linear-gradient(135deg, rgba(255,255,255,0.04), rgba(184,255,80,0.1));
+  border-color:rgba(184,255,80,0.5); color:#fff;
+  font-size:15px; padding:18px 14px; letter-spacing:5px;
+}
+.btn-act.send:hover { background:linear-gradient(135deg, rgba(184,255,80,0.18), rgba(255,200,40,0.14)); border-color:rgba(255,255,255,0.6); letter-spacing:6px; }
+
+footer { position:fixed; bottom:0; left:0; right:0; background:var(--darker); border-top:1px solid #111; padding:6px 24px; display:flex; gap:18px; font-size:9px; color:#333; z-index:100; }
+footer b { color:var(--cyan); }
+#status-bar { color:#2a2a2a; }
+#status-bar.live { color:var(--lime); }
+
+#notify { position:fixed; top:70px; right:20px; background:var(--black); border:1px solid var(--cyan); color:var(--cyan); padding:9px 16px; font-size:10px; letter-spacing:1px; z-index:9000; opacity:0; transform:translateX(20px); transition:all 0.22s; pointer-events:none; box-shadow:0 0 18px rgba(0,255,224,0.25); }
+#notify.show { opacity:1; transform:translateX(0); }
+
+/* ─── MYSTIC HUD ──────────────────────────────────────────────────────────
+   Floating draggable panels connected by live SVG bezier traces.
+   Thin white engraving lines, NASA-tech, no emojis.                      */
+header, .toolbar { display:none !important; }
+main { padding-top:160px !important; }
+
+#hud-svg {
+  position:fixed; inset:0; pointer-events:none; z-index:60;
+  width:100vw; height:100vh;
+}
+#hud-svg path { stroke:rgba(255,255,255,0.18); stroke-width:1; fill:none; transition:stroke 0.3s; }
+#hud-svg .trace-active { stroke:rgba(255,255,255,0.45); stroke-width:1.2; }
+#hud-svg .anchor { fill:none; stroke:rgba(255,255,255,0.3); stroke-width:0.8; }
+#hud-svg .anchor-dot { fill:rgba(255,255,255,0.6); }
+#hud-svg .arc-text { font-family:'Share Tech Mono',monospace; font-size:7px; fill:rgba(255,255,255,0.4); letter-spacing:2px; }
+
+.hud-panel {
+  position:fixed; z-index:80; user-select:none;
+  background:rgba(8,10,14,0.55); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,0.12);
+  font-family:'JetBrains Mono','Share Tech Mono',monospace;
+  color:rgba(255,255,255,0.85);
+  transition:border-color 0.18s, box-shadow 0.18s;
+}
+.hud-panel:hover { border-color:rgba(255,255,255,0.35); box-shadow:0 0 32px rgba(255,255,255,0.06); }
+.hud-panel.dragging { transition:none; cursor:grabbing; }
+.hud-panel-handle {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:7px 12px; cursor:grab;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  font-size:8px; letter-spacing:3px; color:rgba(255,255,255,0.45);
+}
+.hud-panel-handle::before {
+  content:''; display:inline-block; width:6px; height:6px; border:1px solid rgba(255,255,255,0.4);
+  margin-right:8px; border-radius:50%;
+}
+.hud-panel-body { padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
+
+/* SVG icons replacing emojis — tiny inline */
+.svg-ico { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.2; vertical-align:middle; }
+
+/* Brand panel */
+#hud-brand .brand-mark { display:flex; align-items:center; gap:10px; }
+#hud-brand .brand-mark svg { width:38px; height:38px; }
+#hud-brand .brand-text { font-family:'Bebas Neue',sans-serif; font-size:18px; letter-spacing:5px; color:rgba(255,255,255,0.92); line-height:1; }
+#hud-brand .brand-sub { font-size:8px; letter-spacing:3px; color:rgba(255,255,255,0.35); margin-top:3px; }
+#hud-brand .brand-stats { display:flex; gap:14px; margin-top:6px; font-size:8px; color:rgba(255,255,255,0.4); letter-spacing:2px; }
+#hud-brand .brand-stats b { color:rgba(255,255,255,0.85); font-weight:400; }
+
+/* Search panel */
+#hud-search { display:flex; flex-direction:column; min-width:280px; }
+#hud-search input[type=search] { width:100%; background:transparent; border:none; border-bottom:1px solid rgba(255,255,255,0.18); color:rgba(255,255,255,0.95); font-family:inherit; font-size:11px; letter-spacing:2px; padding:6px 2px; outline:none; }
+#hud-search input[type=search]:focus { border-bottom-color:rgba(255,255,255,0.5); }
+#hud-search input::placeholder { color:rgba(255,255,255,0.25); letter-spacing:3px; }
+#hud-search .row { display:flex; gap:10px; align-items:center; }
+#hud-search select { background:transparent; border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.7); font-family:inherit; font-size:9px; letter-spacing:2px; padding:5px 8px; outline:none; cursor:pointer; }
+#hud-search .size-row { display:flex; align-items:center; gap:8px; font-size:8px; color:rgba(255,255,255,0.35); letter-spacing:2px; }
+#hud-search .size-row input[type=range] { flex:1; accent-color:rgba(255,255,255,0.7); }
+
+/* Categories panel — circular chips */
+#hud-cats { padding:14px 16px; }
+#hud-cats .cats-list { display:flex; flex-direction:column; gap:6px; }
+.cat-chip {
+  display:flex; align-items:center; gap:10px; cursor:pointer;
+  padding:5px 4px; transition:all 0.15s;
+  font-size:9px; letter-spacing:2.5px; color:rgba(255,255,255,0.4);
+}
+.cat-chip:hover { color:rgba(255,255,255,0.8); }
+.cat-chip .chip-dot {
+  width:9px; height:9px; border-radius:50%; border:1px solid rgba(255,255,255,0.3);
+  transition:all 0.18s;
+}
+.cat-chip.active { color:rgba(255,255,255,1); }
+.cat-chip.active .chip-dot { background:rgba(255,255,255,0.95); border-color:rgba(255,255,255,0.95); box-shadow:0 0 10px rgba(255,255,255,0.5); }
+
+/* Folder picker panel */
+#hud-folder { min-width:240px; }
+#hud-folder .folder-name { font-size:10px; letter-spacing:2px; color:rgba(255,255,255,0.55); margin-bottom:8px; word-break:break-all; }
+#hud-folder .folder-name span { color:rgba(255,255,255,0.3); font-size:8px; display:block; margin-bottom:3px; }
+.btn-pick {
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  width:100%; padding:14px 20px;
+  background:transparent; border:1px solid rgba(255,255,255,0.3);
+  color:rgba(255,255,255,0.9); font-family:'Bebas Neue',sans-serif;
+  font-size:14px; letter-spacing:5px; cursor:pointer; transition:all 0.2s;
+}
+.btn-pick:hover { background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.7); letter-spacing:6px; }
+.btn-pick svg { width:14px; height:14px; }
+
+/* Footer-like status panel */
+#hud-status {
+  position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+  display:flex; gap:24px; align-items:center;
+  padding:8px 22px; background:rgba(8,10,14,0.55); backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,0.12);
+  font-family:'JetBrains Mono','Share Tech Mono',monospace; font-size:8px; letter-spacing:3px;
+  color:rgba(255,255,255,0.45); z-index:80;
+}
+#hud-status b { color:rgba(255,255,255,0.85); font-weight:400; }
+#hud-status .status-live { color:rgba(180,255,80,0.85); }
+</style>
+</head>
+<body>
+
+<!-- Live SVG layer for engraving connectors between draggable panels -->
+<svg id="hud-svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+  <defs>
+    <radialGradient id="anchor-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.4)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+  </defs>
+  <g id="hud-traces"></g>
+  <g id="hud-anchors"></g>
+</svg>
+
+<!-- Brand panel — top-left -->
+<div class="hud-panel" id="hud-brand" data-anchor="bl-r" style="top:32px; left:32px;">
+  <div class="hud-panel-handle"><span>BRAND · 01</span><span style="opacity:0.4">∷</span></div>
+  <div class="hud-panel-body">
+    <div class="brand-mark">
+      <svg viewBox="0 0 40 40" fill="none" stroke="rgba(255,255,255,0.92)" stroke-width="1.2">
+        <circle cx="20" cy="20" r="18"/>
+        <circle cx="20" cy="20" r="11"/>
+        <path d="M20 2 L20 38 M2 20 L38 20"/>
+        <circle cx="20" cy="20" r="2.5" fill="rgba(255,255,255,0.92)" stroke="none"/>
+      </svg>
+      <div>
+        <div class="brand-text">LOCAL VIEWER</div>
+        <div class="brand-sub">ANT · ON · MARS</div>
+      </div>
+    </div>
+    <div class="brand-stats">
+      <span>GLBs <b id="st-total">0</b></span>
+      <span>RENDER <b id="st-rendered">0/6</b></span>
+    </div>
+  </div>
+</div>
+
+<!-- Search panel — top-center -->
+<div class="hud-panel" id="hud-search" data-anchor="all" style="top:32px; left:50%; transform:translateX(-50%);">
+  <div class="hud-panel-handle"><span>QUERY · 02</span><span style="opacity:0.4">∷</span></div>
+  <div class="hud-panel-body">
+    <input type="search" id="search" placeholder="BUSCAR ASSET">
+    <div class="row">
+      <select id="sort-mode" style="flex:1">
+        <option value="name">SORT · NOMBRE</option>
+        <option value="size">SORT · TAMAÑO</option>
+        <option value="date">SORT · FECHA</option>
+      </select>
+    </div>
+    <div class="size-row"><span>SIZE</span><input type="range" id="grid-sz" min="160" max="380" value="220" step="20"><span id="size-val">220</span></div>
+  </div>
+</div>
+
+<!-- Categories panel — top-right -->
+<div class="hud-panel" id="hud-cats" data-anchor="br-l" style="top:32px; right:32px;">
+  <div class="hud-panel-handle"><span>CATEGORÍAS · 03</span><span style="opacity:0.4">∷</span></div>
+  <div class="cats-list">
+    <div class="cat-chip active" data-cat="all"><span class="chip-dot"></span><span>TODOS</span></div>
+    <div class="cat-chip" data-cat="vehicle"><span class="chip-dot"></span><span>VEHÍCULOS</span></div>
+    <div class="cat-chip" data-cat="environment"><span class="chip-dot"></span><span>ENTORNOS</span></div>
+    <div class="cat-chip" data-cat="prop"><span class="chip-dot"></span><span>PROPS</span></div>
+    <div class="cat-chip" data-cat="character"><span class="chip-dot"></span><span>PERSONAJES</span></div>
+    <div class="cat-chip" data-cat="other"><span class="chip-dot"></span><span>OTROS</span></div>
+  </div>
+</div>
+
+<!-- Folder picker panel — middle-right -->
+<div class="hud-panel" id="hud-folder" data-anchor="ml-l" style="top:50%; right:32px; transform:translateY(-50%);">
+  <div class="hud-panel-handle"><span>SOURCE · 04</span><span style="opacity:0.4">∷</span></div>
+  <div class="hud-panel-body">
+    <div class="folder-name"><span>CARPETA</span><span id="st-source" style="color:rgba(255,255,255,0.6);font-size:10px;">sin carpeta</span></div>
+    <button class="btn-pick" id="btn-pick">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 4 L7 4 L8.5 5.5 L14 5.5 L14 13 L2 13 Z"/><path d="M2 4 L2 13" stroke-opacity="0.5"/></svg>
+      ELEGIR CARPETA
+    </button>
+  </div>
+</div>
+
+<main>
+  <div id="container" class="empty">
+    <div class="icon">📂</div>
+    <h3>NINGUNA CARPETA</h3>
+    <p>Elegí una carpeta de tu disco para previsualizar todos sus GLBs.<br>Sólo se renderizan al pasar el mouse — sin colapso de RAM.</p>
+    <button class="btn-primary" onclick="document.getElementById('btn-pick').click()">📂 ELEGIR CARPETA</button>
+  </div>
+</main>
+
+<!-- MODAL -->
+<div id="modal">
+  <div class="modal-header">
+    <span class="modal-title" id="modal-title">ASSET</span>
+    <span class="modal-subtitle" id="modal-subtitle"></span>
+    <button class="modal-close" id="modal-close-btn">✕ CERRAR</button>
+  </div>
+  <div class="modal-body">
+    <div id="modal-canvas-wrap">
+      <div class="modal-hud">
+        POLY <b id="hud-poly">—</b><br>
+        VERTS <b id="hud-verts">—</b><br>
+        MESHES <b id="hud-meshes">—</b><br>
+        MATS <b id="hud-mats">—</b>
+      </div>
+      <div class="modal-loading" id="modal-loading"><div class="modal-spinner"></div>CARGANDO…</div>
+      <div class="modal-hint">DRAG · ROTAR — SCROLL · ZOOM — SHIFT+DRAG · PAN</div>
+    </div>
+    <div class="modal-sidebar">
+      <div class="sb-block">
+        <h4>NOMBRE</h4>
+        <div class="name-edit">
+          <input type="text" id="clean-name" placeholder="nombre.del.asset">
+          <button id="btn-save-name">OK</button>
+        </div>
+      </div>
+      <div class="sb-block">
+        <h4>ARCHIVO</h4>
+        <div class="info-row"><span class="k">FILENAME</span><span class="v" id="info-filename" style="font-size:8px;max-width:180px;overflow:hidden;text-overflow:ellipsis;">—</span></div>
+        <div class="info-row"><span class="k">TAMAÑO</span><span class="v" id="info-size">—</span></div>
+      </div>
+      <div class="sb-block">
+        <h4>GEOMETRÍA</h4>
+        <div class="info-row"><span class="k">TRIÁNGULOS</span><span class="v" id="info-poly">—</span></div>
+        <div class="info-row"><span class="k">VÉRTICES</span><span class="v" id="info-verts">—</span></div>
+        <div class="info-row"><span class="k">MESHES</span><span class="v" id="info-meshes">—</span></div>
+        <div class="info-row"><span class="k">MATERIALES</span><span class="v" id="info-mats">—</span></div>
+      </div>
+      <div class="sb-block">
+        <h4>✂ CROP</h4>
+        <div class="crop-mode">
+          <button data-crop="off" class="active">OFF</button>
+          <button data-crop="box">▢ BOX</button>
+          <button data-crop="cyl">◯ CYL</button>
+        </div>
+        <div id="crop-ctrls" style="display:none;">
+          <div style="font-size:8px;color:#333;letter-spacing:1px;margin:4px 0 2px;">TAMAÑO</div>
+          <div class="slider-row"><label>X</label><input type="range" id="crop-x" min="0.05" max="3" step="0.02" value="1"><span id="crop-x-v">1.00</span></div>
+          <div class="slider-row"><label>Y</label><input type="range" id="crop-y" min="0.05" max="3" step="0.02" value="1"><span id="crop-y-v">1.00</span></div>
+          <div class="slider-row"><label>Z</label><input type="range" id="crop-z" min="0.05" max="3" step="0.02" value="1"><span id="crop-z-v">1.00</span></div>
+          <div style="font-size:8px;color:#333;letter-spacing:1px;margin:8px 0 2px;">POSICIÓN</div>
+          <div class="slider-row"><label>X</label><input type="range" id="crop-px" min="-3" max="3" step="0.02" value="0"><span id="crop-px-v">0.00</span></div>
+          <div class="slider-row"><label>Y</label><input type="range" id="crop-py" min="-3" max="3" step="0.02" value="0"><span id="crop-py-v">0.00</span></div>
+          <div class="slider-row"><label>Z</label><input type="range" id="crop-pz" min="-3" max="3" step="0.02" value="0"><span id="crop-pz-v">0.00</span></div>
+          <button class="btn-act" id="btn-reset-crop" style="width:100%;margin-top:6px;font-size:10px;">↺ RESET</button>
+          <button class="btn-act lime" id="btn-export-crop" style="width:100%;margin-top:6px;">💾 EXPORTAR CROP</button>
+        </div>
+      </div>
+      <div class="sb-actions">
+        <button class="btn-act" id="btn-snap-visor">📸 SNAPSHOTS (1:1 + 16:9)</button>
+        <button class="btn-act" id="btn-download">💾 DESCARGAR ORIGINAL</button>
+        <button class="btn-act send" id="btn-send-scene">+ MANDAR A ANT ON MARS</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="hud-status">
+  <span>SH · ANT·ON·MARS</span>
+  <span><b id="st-footer">0</b> ASSETS</span>
+  <span id="status-bar">ESPERANDO CARPETA</span>
+  <span style="opacity:0.4">2026</span>
+</div>
+<div id="notify"></div>
+
+<script type="module">
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js'
+
+const DRACO = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/'
+
+// ─── STATE ────────────────────────────────────────────────────────────────
+const state = {
+  files: [],          // [{ id, name, file, size, lastModified, cleanName, category, blobUrl }]
+  filter: 'all',
+  search: '',
+  sort: 'name',
+  gridSize: 220,
+  modal: null,
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────────
+const fmt = n => Math.round(n).toLocaleString()
+const fmtBytes = b => b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB'
+
+function cleanName(filename) {
+  let n = filename.replace(/\.(glb|gltf)$/i,'')
+  n = n.replace(/^Meshy_?AI?_?/i,'')
+  n = n.replace(/_\d{8,}[^_]*$/i,'')
+  n = n.replace(/_/g,'.')
+  return n.toLowerCase() || filename
+}
+
+function inferCategory(name) {
+  const n = name.toLowerCase()
+  if (/(van|car|rover|vehicle|camion|truck|moto|wheel|rueda)/.test(n)) return 'vehicle'
+  if (/(mountain|terrain|lava|selva|coast|landscape|environment|sky)/.test(n)) return 'environment'
+  if (/(human|character|figure|qilin|dragon|horse|person|ant)/.test(n)) return 'character'
+  if (/(mate|cup|vase|prop|bottle|item)/.test(n)) return 'prop'
+  return 'other'
+}
+
+function notify(msg, color='var(--cyan)') {
+  const el = document.getElementById('notify')
+  el.textContent = msg; el.style.borderColor = color; el.style.color = color
+  el.classList.add('show')
+  setTimeout(() => el.classList.remove('show'), 2200)
+}
+function setStatus(msg, live=false) {
+  const el = document.getElementById('status-bar')
+  el.textContent = msg; el.className = live ? 'live' : ''
+}
+function updateStats() {
+  document.getElementById('st-total').textContent = state.files.length
+  document.getElementById('st-footer').textContent = state.files.length
+  document.getElementById('st-rendered').textContent = `${slots.size}/${MAX_SLOTS}`
+}
+
+function makeLoader() {
+  const draco = new DRACOLoader(); draco.setDecoderPath(DRACO)
+  const loader = new GLTFLoader(); loader.setDRACOLoader(draco)
+  return { loader, draco }
+}
+
+// ─── POOL SYSTEM (6 slots max, hover-to-flip, despawn by rarity) ──────────
+// One offscreen WebGL renderer renders each active slot per frame and blits
+// the output into the slot's 2D canvas via drawImage.
+const MAX_SLOTS = 6
+const RARITY_DURATION = { classic: 4000, violet: 5000, gold: 8000 }
+const RARITY_COLORS = {
+  classic: { glow:'rgba(0,255,224,0.45)', border:'#00FFE0', bg:0x050505, rim:0x00FFE0 },
+  violet:  { glow:'rgba(180,80,255,0.55)', border:'#B450FF', bg:0x0a0512, rim:0xB450FF },
+  gold:    { glow:'rgba(255,200,40,0.6)', border:'#FFC828', bg:0x12100a, rim:0xFFC828 },
+}
+
+const slots = new Map()  // assetId -> slot
+const SHARED_SIZE = 256
+let sharedRenderer = null, sharedScene = null, sharedCamera = null, rimLight = null
+let sharedAnimId = null
+
+function ensureSharedRenderer() {
+  if (sharedRenderer) return
+  const off = document.createElement('canvas')
+  off.width = SHARED_SIZE; off.height = SHARED_SIZE
+  sharedRenderer = new THREE.WebGLRenderer({ canvas: off, antialias:true, alpha:false, preserveDrawingBuffer:true, powerPreference:'high-performance' })
+  sharedRenderer.setSize(SHARED_SIZE, SHARED_SIZE, false)
+  sharedRenderer.setPixelRatio(1)
+  sharedRenderer.setClearColor(0x050505, 1)
+
+  sharedScene = new THREE.Scene()
+  const grid = new THREE.GridHelper(4, 8, 0x0a2020, 0x050f0f); grid.position.y = -1; sharedScene.add(grid)
+  sharedScene.add(new THREE.AmbientLight(0xfff4e8, 0.6))
+  sharedScene.add(new THREE.AmbientLight(0x102030, 0.4))
+  const dir = new THREE.DirectionalLight(0xffffff, 1.4); dir.position.set(3,5,3); sharedScene.add(dir)
+  rimLight = new THREE.DirectionalLight(0x00FFE0, 0.8); rimLight.position.set(-2,1,-2); sharedScene.add(rimLight)
+  const fill = new THREE.PointLight(0xB4FF50, 0.4, 8); fill.position.set(0,2,3); sharedScene.add(fill)
+
+  sharedCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 100)
+  sharedCamera.position.set(2, 1.5, 2); sharedCamera.lookAt(0,0,0)
+}
+
+function disposeAllRenderers() {
+  slots.forEach(slot => {
+    if (slot.despawnTimer) clearTimeout(slot.despawnTimer)
+    if (slot.model) {
+      slot.model.traverse(o => {
+        o.geometry?.dispose()
+        const mats = o.material ? (Array.isArray(o.material)?o.material:[o.material]) : []
+        mats.forEach(mm => mm.dispose())
+      })
+    }
+  })
+  slots.clear()
+  if (sharedAnimId) { cancelAnimationFrame(sharedAnimId); sharedAnimId = null }
+}
+
+function startSharedLoop() {
+  if (sharedAnimId) return
+  ensureSharedRenderer()
+  const loop = () => {
+    sharedAnimId = requestAnimationFrame(loop)
+    for (const slot of slots.values()) {
+      if (!slot.loaded || !slot.model) continue
+      const colors = RARITY_COLORS[slot.asset.rarity] || RARITY_COLORS.classic
+      sharedRenderer.setClearColor(colors.bg, 1)
+      rimLight.color.setHex(colors.rim)
+      sharedScene.add(slot.model)
+      slot.t += 0.014
+      slot.model.rotation.y = slot.t
+      slot.model.rotation.x = Math.sin(slot.t * 0.3) * 0.08
+      try {
+        sharedRenderer.render(sharedScene, sharedCamera)
+        if (slot.canvas.width !== SHARED_SIZE) { slot.canvas.width = SHARED_SIZE; slot.canvas.height = SHARED_SIZE }
+        slot.ctx.drawImage(sharedRenderer.domElement, 0, 0, SHARED_SIZE, SHARED_SIZE)
+      } catch {}
+      sharedScene.remove(slot.model)
+    }
+  }
+  loop()
+}
+
+function tryActivate(asset, cardEl) {
+  if (slots.has(asset.id)) {
+    // Already active — refresh despawn timer
+    const s = slots.get(asset.id)
+    if (s.despawnTimer) clearTimeout(s.despawnTimer)
+    s.despawnTimer = setTimeout(() => deactivateSlot(asset.id), RARITY_DURATION[asset.rarity] || 4000)
+    return
+  }
+  if (slots.size >= MAX_SLOTS) return  // pool full — nothing happens
+
+  const canvas = cardEl.querySelector('canvas')
+  const ctx = canvas.getContext('2d')
+  const colors = RARITY_COLORS[asset.rarity] || RARITY_COLORS.classic
+
+  cardEl.classList.add('flipped')
+
+  const slot = {
+    asset, cardEl, canvas, ctx,
+    model: null,
+    loaded: false,
+    t: Math.random() * Math.PI * 2,
+    despawnTimer: null,
+  }
+  slots.set(asset.id, slot)
+  updateStats()
+
+  const { loader, draco } = makeLoader()
+  loader.load(asset.blobUrl, gltf => {
+    if (!slots.has(asset.id)) { draco.dispose(); return }
+    const m = gltf.scene
+    const box = new THREE.Box3().setFromObject(m)
+    const center = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z) || 1
+    m.position.sub(center); m.scale.setScalar(1.8/maxDim)
+    m.traverse(c => {
+      if (c.isMesh) {
+        const mats = Array.isArray(c.material) ? c.material : [c.material]
+        mats.forEach(mat => {
+          if (mat.emissiveIntensity !== undefined && mat.emissiveIntensity < 0.01) mat.emissiveIntensity = 0.06
+        })
+      }
+    })
+    slot.model = m
+
+    let tri=0, vert=0, mc=0; const ms=new Set()
+    m.traverse(c=>{
+      if(!c.isMesh) return; mc++
+      const g=c.geometry
+      if(g.index) tri+=g.index.count/3
+      else if(g.attributes.position) tri+=g.attributes.position.count/3
+      if(g.attributes.position) vert+=g.attributes.position.count
+      ;(Array.isArray(c.material)?c.material:[c.material]).forEach(x=>ms.add(x))
+    })
+    asset.stats = { tri:Math.round(tri), vert, meshes:mc, mats:ms.size }
+
+    slot.loaded = true
+    const spin = cardEl.querySelector('.card-loader')
+    if (spin) spin.style.display = 'none'
+    draco.dispose()
+
+    // Start despawn timer
+    slot.despawnTimer = setTimeout(() => deactivateSlot(asset.id), RARITY_DURATION[asset.rarity] || 4000)
+  }, undefined, err => {
+    console.warn('Load failed', asset.name, err)
+    draco.dispose()
+    deactivateSlot(asset.id)
+  })
+}
+
+function deactivateSlot(id) {
+  const slot = slots.get(id)
+  if (!slot) return
+  if (slot.despawnTimer) clearTimeout(slot.despawnTimer)
+  if (slot.model) {
+    slot.model.traverse(o => {
+      o.geometry?.dispose()
+      const mats = o.material ? (Array.isArray(o.material)?o.material:[o.material]) : []
+      mats.forEach(mm => mm.dispose())
+    })
+  }
+  slot.cardEl.classList.remove('flipped')
+  // Clear the canvas
+  if (slot.ctx) slot.ctx.clearRect(0, 0, slot.canvas.width, slot.canvas.height)
+  slots.delete(id)
+  updateStats()
+}
+
+// ─── RENDER GRID ──────────────────────────────────────────────────────────
+function renderGrid() {
+  disposeAllRenderers()
+  const container = document.getElementById('container')
+
+  if (state.files.length === 0) {
+    container.className = 'empty'
+    container.innerHTML = `
+      <div class="icon">📂</div>
+      <h3>NINGUNA CARPETA</h3>
+      <p>Elegí una carpeta de tu disco para previsualizar todos sus GLBs.<br>Cada GLB se carga progresivamente y gira en su preview.</p>
+      <button class="btn-primary" onclick="document.getElementById('btn-pick').click()">📂 ELEGIR CARPETA</button>`
+    return
+  }
+
+  const filtered = state.files
+    .filter(a => (state.filter==='all'||a.category===state.filter) &&
+                 (!state.search || a.cleanName.includes(state.search) || a.name.toLowerCase().includes(state.search)))
+    .sort((a,b) => state.sort==='size' ? b.size-a.size
+                 : state.sort==='date' ? b.lastModified-a.lastModified
+                 : a.cleanName.localeCompare(b.cleanName))
+
+  container.className = 'asset-grid'
+  container.style.gridTemplateColumns = `repeat(auto-fill,minmax(${state.gridSize}px,1fr))`
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="icon">⊘</div><h3>SIN RESULTADOS</h3><p>Probá otro filtro o búsqueda.</p></div>`
+    return
+  }
+
+  container.innerHTML = filtered.map((a, i) => `
+    <div class="asset-card rarity-${a.rarity}" data-id="${a.id}" style="animation-delay:${Math.min(i*0.012,0.6)}s">
+      <div class="card-inner">
+        <div class="card-back">
+          <div class="card-rarity-badge">${a.rarity === 'gold' ? '★' : a.rarity === 'violet' ? '◆' : '◇'}</div>
+          <div class="card-back-name">${a.cleanName}</div>
+          <div class="card-back-meta">${fmtBytes(a.size)} · ${a.rarity.toUpperCase()}</div>
+          <div class="card-back-hint">HOVER → REVELAR</div>
+        </div>
+        <div class="card-front">
+          <div class="card-thumb">
+            <canvas id="cv-${a.id}"></canvas>
+            <div class="card-loader"><div class="card-spinner"></div></div>
+            <div class="card-name-overlay">${a.cleanName}</div>
+          </div>
+          <div class="card-actions">
+            <button class="card-btn" data-act="visor">VISOR</button>
+            <button class="card-btn" data-act="snap">📸</button>
+            <button class="card-btn primary" data-act="send">+ SCENE</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('')
+
+  container.querySelectorAll('.asset-card').forEach(card => {
+    const id = card.dataset.id
+    const asset = state.files.find(x => x.id === id)
+    if (!asset) return
+
+    // Hover with small delay (prevents accidental triggers when sliding mouse fast)
+    let hoverTimer = null
+    card.addEventListener('mouseenter', () => {
+      hoverTimer = setTimeout(() => tryActivate(asset, card), 220)
+    })
+    card.addEventListener('mouseleave', () => {
+      if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null }
+      // Don't deactivate immediately — let the rarity timer handle it
+    })
+
+    card.querySelector('[data-act="visor"]').addEventListener('click', e => {
+      e.stopPropagation(); openVisor(asset)
+    })
+    card.querySelector('[data-act="snap"]').addEventListener('click', e => {
+      e.stopPropagation(); takeCardSnapshots(asset, id)
+    })
+    card.querySelector('[data-act="send"]').addEventListener('click', e => {
+      e.stopPropagation(); sendToScene(asset)
+    })
+    card.addEventListener('click', e => {
+      if (!e.target.closest('.card-btn')) openVisor(asset)
+    })
+  })
+
+  startSharedLoop()
+  updateStats()
+}
+
+// ─── FOLDER PERSISTENCE (IndexedDB) ───────────────────────────────────────
+const IDB_DB = 'ant-mars-viewer', IDB_STORE = 'handles', IDB_KEY = 'lastFolder'
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_DB, 1)
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE)
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+async function idbSaveHandle(handle) {
+  try {
+    const db = await idbOpen()
+    const tx = db.transaction(IDB_STORE, 'readwrite')
+    tx.objectStore(IDB_STORE).put(handle, IDB_KEY)
+    return new Promise(res => { tx.oncomplete = () => res(); tx.onerror = () => res() })
+  } catch {}
+}
+async function idbLoadHandle() {
+  try {
+    const db = await idbOpen()
+    return await new Promise((res) => {
+      const tx = db.transaction(IDB_STORE, 'readonly')
+      const req = tx.objectStore(IDB_STORE).get(IDB_KEY)
+      req.onsuccess = () => res(req.result || null)
+      req.onerror = () => res(null)
+    })
+  } catch { return null }
+}
+
+async function loadFromHandle(dir) {
+  setStatus('LEYENDO CARPETA…', true)
+  const files = []
+  for await (const entry of dir.values()) {
+    if (entry.kind === 'file' && /\.glb$/i.test(entry.name)) {
+      try { files.push(await entry.getFile()) } catch {}
+    }
+  }
+  if (files.length === 0) { notify('Sin GLBs en esa carpeta', 'var(--red)'); setStatus('LISTO'); return }
+  state.files.forEach(a => { try { URL.revokeObjectURL(a.blobUrl) } catch{} })
+  state.files = files.map(file => ({
+    id: 'a'+Math.random().toString(36).slice(2,9),
+    name: file.name, file, size: file.size, lastModified: file.lastModified,
+    cleanName: cleanName(file.name), category: inferCategory(file.name),
+    blobUrl: URL.createObjectURL(file), stats: null, rarity: 'classic',
+  }))
+  const sorted = [...state.files].sort((a,b) => a.size - b.size)
+  const n = sorted.length
+  const goldCut = Math.floor(n * 0.80), violetCut = Math.floor(n * 0.50)
+  sorted.forEach((f, i) => { f.rarity = i >= goldCut ? 'gold' : i >= violetCut ? 'violet' : 'classic' })
+  document.getElementById('st-source').textContent = `${dir.name} · ${files.length} GLBs`
+  setStatus('LISTO')
+  notify(`✦ ${files.length} GLBs cargados`, 'var(--lime)')
+  renderGrid()
+}
+
+// ─── FOLDER PICKER ────────────────────────────────────────────────────────
+async function pickFolder() {
+  if (!window.showDirectoryPicker) {
+    notify('Tu navegador no soporta File System Access API', 'var(--red)')
+    return
+  }
+  try {
+    const dir = await window.showDirectoryPicker()
+    await idbSaveHandle(dir)
+    await loadFromHandle(dir)
+  } catch (e) {
+    if (e.name !== 'AbortError') { console.error(e); notify('Error: '+e.message, 'var(--red)') }
+    setStatus('LISTO')
+  }
+}
+
+// On startup, try to restore last folder (requires user permission re-grant)
+async function tryRestoreLastFolder() {
+  const handle = await idbLoadHandle()
+  if (!handle) return
+  try {
+    const perm = await handle.queryPermission({ mode: 'read' })
+    if (perm === 'granted') {
+      await loadFromHandle(handle)
+      notify(`✦ Carpeta restaurada: ${handle.name}`, 'var(--lime)')
+    } else {
+      // Show a button to re-grant; we don't auto-prompt
+      setStatus(`carpeta previa: ${handle.name} — click ELEGIR para restaurar`)
+      const pickBtn = document.getElementById('btn-pick')
+      if (pickBtn) {
+        pickBtn.dataset.restore = '1'
+        pickBtn.title = 'click para restaurar carpeta previa: ' + handle.name
+      }
+    }
+  } catch(e) { /* ignore */ }
+}
+// Override pickFolder click: if restore mode, ask permission instead of opening picker
+async function smartPickFolder() {
+  const pickBtn = document.getElementById('btn-pick')
+  if (pickBtn?.dataset.restore === '1') {
+    const handle = await idbLoadHandle()
+    if (handle) {
+      try {
+        const perm = await handle.requestPermission({ mode: 'read' })
+        if (perm === 'granted') {
+          delete pickBtn.dataset.restore
+          await loadFromHandle(handle); return
+        }
+      } catch {}
+    }
+  }
+  return pickFolder()
+}
+
+// ─── MODAL VISOR ──────────────────────────────────────────────────────────
+let modalRenderer=null, modalAnim=null, modalScene=null, modalCamera=null, modalModel=null, modalCropHelper=null, modalCropMode='off'
+
+function openVisor(asset) {
+  state.modal = asset
+  document.getElementById('modal-title').textContent = asset.cleanName.toUpperCase()
+  document.getElementById('modal-subtitle').textContent = asset.name
+  document.getElementById('clean-name').value = asset.cleanName
+  document.getElementById('info-filename').textContent = asset.name
+  document.getElementById('info-size').textContent = fmtBytes(asset.size)
+  ;['hud-poly','hud-verts','hud-meshes','hud-mats','info-poly','info-verts','info-meshes','info-mats'].forEach(id => {
+    document.getElementById(id).textContent = '—'
+  })
+  document.getElementById('modal-loading').style.display = 'flex'
+  // Reset crop UI
+  modalCropMode = 'off'
+  document.querySelectorAll('.crop-mode button').forEach(b => b.classList.toggle('active', b.dataset.crop==='off'))
+  document.getElementById('crop-ctrls').style.display = 'none'
+
+  document.getElementById('modal').classList.add('open')
+  initVisor(asset)
+}
+
+function initVisor(asset) {
+  const wrap = document.getElementById('modal-canvas-wrap')
+  if (modalAnim) cancelAnimationFrame(modalAnim)
+  if (modalRenderer) { modalRenderer.dispose(); wrap.querySelectorAll('canvas').forEach(c => c.remove()) }
+  if (modalScene) {
+    modalScene.traverse(o => {
+      o.geometry?.dispose()
+      const mm = o.material ? (Array.isArray(o.material)?o.material:[o.material]) : []
+      mm.forEach(m => m.dispose())
+    })
+  }
+  modalModel = null; modalCropHelper = null
+
+  const W = wrap.clientWidth, H = wrap.clientHeight
+  modalRenderer = new THREE.WebGLRenderer({ antialias:true })
+  modalRenderer.setSize(W, H)
+  modalRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  modalRenderer.setClearColor(0x020202, 1)
+  wrap.appendChild(modalRenderer.domElement)
+
+  modalScene = new THREE.Scene()
+  modalScene.fog = new THREE.FogExp2(0x020202, 0.025)
+  const grid = new THREE.GridHelper(30, 40, 0x0a2020, 0x050f0f); grid.position.y = -3; modalScene.add(grid)
+  modalScene.add(new THREE.AmbientLight(0x102020, 0.6))
+  const sun = new THREE.DirectionalLight(0xffffff, 1.8); sun.position.set(6,10,6); modalScene.add(sun)
+  const cyl = new THREE.PointLight(0x00FFE0, 3, 16); cyl.position.set(-4,3,-3); modalScene.add(cyl)
+  const lml = new THREE.PointLight(0xB4FF50, 1.2, 12); lml.position.set(5,-1,4); modalScene.add(lml)
+
+  modalCamera = new THREE.PerspectiveCamera(45, W/H, 0.01, 500)
+  modalCamera.position.set(4, 3, 5); modalCamera.lookAt(0,0,0)
+
+  const { loader, draco } = makeLoader()
+  loader.load(asset.blobUrl, gltf => {
+    const model = gltf.scene
+    const box = new THREE.Box3().setFromObject(model)
+    const center = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z) || 1
+    const scale = 3/maxDim
+    model.position.sub(center.multiplyScalar(scale))
+    model.scale.setScalar(scale)
+
+    // Stats
+    let tri=0, vert=0, mc=0; const ms=new Set()
+    model.traverse(c=>{
+      if(!c.isMesh) return; mc++
+      const g=c.geometry
+      if(g.index) tri+=g.index.count/3
+      else if(g.attributes.position) tri+=g.attributes.position.count/3
+      if(g.attributes.position) vert+=g.attributes.position.count
+      ;(Array.isArray(c.material)?c.material:[c.material]).forEach(x=>ms.add(x))
+    })
+    asset.stats = { tri:Math.round(tri), vert, meshes:mc, mats:ms.size }
+    document.getElementById('hud-poly').textContent = fmt(tri)
+    document.getElementById('hud-verts').textContent = fmt(vert)
+    document.getElementById('hud-meshes').textContent = mc
+    document.getElementById('hud-mats').textContent = ms.size
+    document.getElementById('info-poly').textContent = fmt(tri)
+    document.getElementById('info-verts').textContent = fmt(vert)
+    document.getElementById('info-meshes').textContent = mc
+    document.getElementById('info-mats').textContent = ms.size
+
+    const dist = scale*maxDim*2.4
+    modalCamera.position.set(dist, dist*0.6, dist); modalCamera.lookAt(0,0,0)
+    modalCamera.updateProjectionMatrix()
+    modalScene.add(model); modalModel = model
+    document.getElementById('modal-loading').style.display = 'none'
+    draco.dispose()
+  }, undefined, () => { draco.dispose(); document.getElementById('modal-loading').style.display = 'none'; notify('Error al cargar GLB', 'var(--red)') })
+
+  // Orbit controls
+  let drag=false, shift=false, prev={x:0,y:0}
+  let theta=0.5, phi=1.1, radius=8, tT=0.5, tP=1.1, panX=0, panY=0
+  const cvs = modalRenderer.domElement
+  const onKey = e => { shift = e.type==='keydown' && e.key==='Shift' }
+  window.addEventListener('keydown', onKey); window.addEventListener('keyup', onKey)
+  cvs.addEventListener('mousedown', e => { drag=true; prev={x:e.clientX,y:e.clientY}; wrap.classList.add('grabbing') })
+  window.addEventListener('mouseup', () => { drag=false; wrap.classList.remove('grabbing') })
+  window.addEventListener('mousemove', e => {
+    if (!drag) return
+    const dx=e.clientX-prev.x, dy=e.clientY-prev.y
+    prev={x:e.clientX,y:e.clientY}
+    if (shift) { panX -= dx*0.008; panY += dy*0.008 }
+    else { tT -= dx*0.005; tP = Math.max(0.05, Math.min(Math.PI-0.05, tP+dy*0.005)) }
+  })
+  cvs.addEventListener('wheel', e => { radius = Math.max(0.5, Math.min(60, radius+e.deltaY*0.01)); e.preventDefault() }, { passive:false })
+
+  let mt=0
+  const loop = () => {
+    modalAnim = requestAnimationFrame(loop); mt += 0.005
+    if (!drag) tT += 0.0025
+    theta += (tT-theta)*0.07; phi += (tP-phi)*0.07
+    modalCamera.position.x = panX + radius*Math.sin(phi)*Math.sin(theta)
+    modalCamera.position.y = panY + radius*Math.cos(phi)
+    modalCamera.position.z = radius*Math.sin(phi)*Math.cos(theta)
+    modalCamera.lookAt(panX, panY, 0)
+    cyl.intensity = 2.5 + Math.sin(mt*1.5)*0.8
+    if (modalCropHelper) modalCropHelper.material.opacity = 0.6 + Math.sin(mt*3)*0.2
+    if (modalRenderer) modalRenderer.render(modalScene, modalCamera)
+  }
+  loop()
+}
+
+function closeVisor() {
+  document.getElementById('modal').classList.remove('open')
+  if (modalAnim) { cancelAnimationFrame(modalAnim); modalAnim=null }
+  if (modalRenderer) { modalRenderer.dispose(); document.getElementById('modal-canvas-wrap').querySelectorAll('canvas').forEach(c => c.remove()); modalRenderer=null }
+  if (modalScene) {
+    modalScene.traverse(o => {
+      o.geometry?.dispose()
+      const mm = o.material ? (Array.isArray(o.material)?o.material:[o.material]) : []
+      mm.forEach(m => m.dispose())
+    })
+    modalScene = null
+  }
+  modalModel = null; modalCropHelper = null; modalCropMode='off'
+  state.modal = null
+}
+
+// ─── CROP ─────────────────────────────────────────────────────────────────
+function setCropMode(mode) {
+  modalCropMode = mode
+  document.querySelectorAll('.crop-mode button').forEach(b => b.classList.toggle('active', b.dataset.crop===mode))
+  document.getElementById('crop-ctrls').style.display = mode==='off' ? 'none' : 'block'
+  if (modalCropHelper) { modalScene.remove(modalCropHelper); modalCropHelper.geometry.dispose(); modalCropHelper.material.dispose(); modalCropHelper = null }
+  if (mode === 'off') return
+  updateCropHelper()
+}
+
+function getCropParams() {
+  return {
+    sx: parseFloat(document.getElementById('crop-x').value),
+    sy: parseFloat(document.getElementById('crop-y').value),
+    sz: parseFloat(document.getElementById('crop-z').value),
+    px: parseFloat(document.getElementById('crop-px').value),
+    py: parseFloat(document.getElementById('crop-py').value),
+    pz: parseFloat(document.getElementById('crop-pz').value),
+  }
+}
+
+function updateCropHelper() {
+  if (modalCropMode === 'off' || !modalScene) return
+  const p = getCropParams()
+  document.getElementById('crop-x-v').textContent = p.sx.toFixed(2)
+  document.getElementById('crop-y-v').textContent = p.sy.toFixed(2)
+  document.getElementById('crop-z-v').textContent = p.sz.toFixed(2)
+  document.getElementById('crop-px-v').textContent = p.px.toFixed(2)
+  document.getElementById('crop-py-v').textContent = p.py.toFixed(2)
+  document.getElementById('crop-pz-v').textContent = p.pz.toFixed(2)
+
+  if (modalCropHelper) { modalScene.remove(modalCropHelper); modalCropHelper.geometry.dispose(); modalCropHelper.material.dispose() }
+  let geo
+  if (modalCropMode === 'box') geo = new THREE.BoxGeometry(2*p.sx, 2*p.sy, 2*p.sz)
+  else geo = new THREE.CylinderGeometry(Math.max(p.sx, p.sz), Math.max(p.sx, p.sz), 2*p.sy, 32)
+  const mat = new THREE.MeshBasicMaterial({ color:0x00FFE0, wireframe:true, transparent:true, opacity:0.6 })
+  modalCropHelper = new THREE.Mesh(geo, mat)
+  modalCropHelper.position.set(p.px, p.py, p.pz)
+  modalScene.add(modalCropHelper)
+}
+
+function resetCrop() {
+  document.getElementById('crop-x').value = 1
+  document.getElementById('crop-y').value = 1
+  document.getElementById('crop-z').value = 1
+  document.getElementById('crop-px').value = 0
+  document.getElementById('crop-py').value = 0
+  document.getElementById('crop-pz').value = 0
+  updateCropHelper()
+}
+
+// Triangle-level crop: keep a triangle only if all 3 vertices are inside the volume.
+// No reconstruction — open edges are fine (user explicitly accepted hollow result).
+function cropMeshByTriangles(mesh, mode, params) {
+  const { sx, sy, sz, px, py, pz } = params
+  const radius = Math.max(sx, sz)
+
+  const geom = mesh.geometry
+  const posAttr = geom.attributes.position
+  if (!posAttr) return null
+
+  const idx = geom.index
+  const triCount = idx ? idx.count / 3 : posAttr.count / 3
+  const v = new THREE.Vector3()
+  const m = mesh.matrixWorld
+
+  const insideBox = (vec) => {
+    return vec.x >= px - sx && vec.x <= px + sx &&
+           vec.y >= py - sy && vec.y <= py + sy &&
+           vec.z >= pz - sz && vec.z <= pz + sz
+  }
+  const insideCyl = (vec) => {
+    const dx = vec.x - px, dz = vec.z - pz
+    return dx*dx + dz*dz <= radius*radius &&
+           vec.y >= py - sy && vec.y <= py + sy
+  }
+  const test = mode === 'box' ? insideBox : insideCyl
+
+  const keepTris = new Uint8Array(triCount)
+  let kept = 0
+  for (let t = 0; t < triCount; t++) {
+    let allIn = true
+    for (let k = 0; k < 3; k++) {
+      const vi = idx ? idx.getX(t*3 + k) : (t*3 + k)
+      v.fromBufferAttribute(posAttr, vi).applyMatrix4(m)
+      if (!test(v)) { allIn = false; break }
+    }
+    if (allIn) { keepTris[t] = 1; kept++ }
+  }
+  if (kept === 0) return null
+
+  // Build new geometry: copy attributes only for kept triangles.
+  const newGeom = new THREE.BufferGeometry()
+  const attrNames = Object.keys(geom.attributes)
+
+  if (idx) {
+    const newIndex = new (idx.array.constructor)(kept * 3)
+    let w = 0
+    for (let t = 0; t < triCount; t++) {
+      if (!keepTris[t]) continue
+      newIndex[w++] = idx.getX(t*3)
+      newIndex[w++] = idx.getX(t*3+1)
+      newIndex[w++] = idx.getX(t*3+2)
+    }
+    newGeom.setIndex(new THREE.BufferAttribute(newIndex, 1))
+    // Keep original attributes — index handles which verts matter
+    for (const name of attrNames) {
+      const a = geom.attributes[name]
+      newGeom.setAttribute(name, a.clone())
+    }
+  } else {
+    // Non-indexed: copy 3 verts per kept triangle
+    for (const name of attrNames) {
+      const a = geom.attributes[name]
+      const itemSize = a.itemSize
+      const ArrType = a.array.constructor
+      const arr = new ArrType(kept * 3 * itemSize)
+      let w = 0
+      for (let t = 0; t < triCount; t++) {
+        if (!keepTris[t]) continue
+        for (let k = 0; k < 3; k++) {
+          for (let c = 0; c < itemSize; c++) {
+            arr[w++] = a.array[(t*3+k)*itemSize + c]
+          }
+        }
+      }
+      newGeom.setAttribute(name, new THREE.BufferAttribute(arr, itemSize, a.normalized))
+    }
+  }
+  newGeom.computeBoundingBox()
+  newGeom.computeBoundingSphere()
+
+  const newMesh = new THREE.Mesh(newGeom, mesh.material)
+  // Bake world transform into vertices? No — we already applied matrixWorld to test. Now reset transform.
+  // Actually we tested in world space; positions in attributes are still local. To preserve visual position,
+  // we keep the original mesh.matrixWorld as the new mesh's local transform.
+  newMesh.applyMatrix4(mesh.matrixWorld)
+  // But positions were in local space when we cloned them — applying matrixWorld now would double-transform.
+  // Simpler: bake the world matrix into the cloned positions, then leave mesh transform as identity.
+  // Redo cleanly:
+  newMesh.matrix.identity()
+  newMesh.position.set(0,0,0); newMesh.rotation.set(0,0,0); newMesh.scale.set(1,1,1)
+  newMesh.updateMatrix()
+  // Bake mesh.matrixWorld into geometry positions
+  const finalPos = newGeom.attributes.position
+  if (finalPos) {
+    const tmp = new THREE.Vector3()
+    for (let i = 0; i < finalPos.count; i++) {
+      tmp.fromBufferAttribute(finalPos, i).applyMatrix4(mesh.matrixWorld)
+      finalPos.setXYZ(i, tmp.x, tmp.y, tmp.z)
+    }
+    finalPos.needsUpdate = true
+  }
+  // And normals
+  const nrm = newGeom.attributes.normal
+  if (nrm) {
+    const nm = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld)
+    const tmp = new THREE.Vector3()
+    for (let i = 0; i < nrm.count; i++) {
+      tmp.fromBufferAttribute(nrm, i).applyMatrix3(nm).normalize()
+      nrm.setXYZ(i, tmp.x, tmp.y, tmp.z)
+    }
+    nrm.needsUpdate = true
+  }
+  return newMesh
+}
+
+async function exportCrop() {
+  if (!modalModel || modalCropMode === 'off') { notify('Activá el crop primero', 'var(--red)'); return }
+  notify('Procesando crop…')
+  const params = getCropParams()
+  modalModel.updateMatrixWorld(true)
+
+  const result = new THREE.Group()
+  let totalKept = 0
+  modalModel.traverse(c => {
+    if (!c.isMesh) return
+    const cropped = cropMeshByTriangles(c, modalCropMode, params)
+    if (cropped) { result.add(cropped); totalKept++ }
+  })
+
+  if (totalKept === 0) {
+    notify('Crop vacío — sin triángulos dentro del volumen', 'var(--red)')
+    return
+  }
+
+  const exporter = new GLTFExporter()
+  exporter.parse(result, gltf => {
+    const blob = new Blob([gltf], { type:'model/gltf-binary' })
+    const url = URL.createObjectURL(blob)
+    const lnk = document.createElement('a')
+    const cleanN = (state.modal?.cleanName || 'asset').replace(/\.glb$/i,'')
+    lnk.download = cleanN + '.glb'
+    lnk.href = url; lnk.click()
+    setTimeout(() => URL.revokeObjectURL(url), 500)
+    notify(`✦ CROP EXPORTADO · ${totalKept} mesh(es)`, 'var(--lime)')
+    // Cleanup
+    result.traverse(o => o.geometry?.dispose())
+  }, err => { console.error(err); notify('Error exportando', 'var(--red)') }, { binary:true })
+}
+
+// ─── SEND TO SCENE ────────────────────────────────────────────────────────
+async function sendToScene(asset) {
+  if (!window.opener || window.opener.closed) {
+    notify('La pestaña del juego se cerró', 'var(--red)')
+    return
+  }
+  try {
+    const buf = await asset.file.arrayBuffer()
+    const blob = new Blob([buf], { type:'model/gltf-binary' })
+    window.opener.postMessage({
+      type: 'send-to-scene',
+      filename: asset.file.name,
+      cleanName: asset.cleanName,
+      blob,
+    }, '*')
+    notify(`✦ ${asset.cleanName} → ANT ON MARS`, 'var(--lime)')
+  } catch(e) {
+    console.error(e); notify('Error enviando: '+e.message, 'var(--red)')
+  }
+}
+
+// ─── SNAPSHOTS (1:1 clean + 16:9 cinematic) ──────────────────────────────
+function downloadDataURL(url, filename) {
+  const lnk = document.createElement('a'); lnk.href = url; lnk.download = filename; lnk.click()
+}
+
+// Render an offscreen scene for an asset and produce two PNGs:
+//  - <name>.square.png — 1024×1024, dark studio, asset centered
+//  - <name>.trailer.png — 1920×1080, cinematic with HUD overlay
+async function renderSnapshots(asset) {
+  notify('Generando snapshots…')
+  const { loader, draco } = makeLoader()
+  let gltf
+  try { gltf = await new Promise((res, rej) => loader.load(asset.blobUrl, res, undefined, rej)) }
+  catch(e) { draco.dispose(); notify('Error cargando GLB', 'var(--red)'); return }
+  draco.dispose()
+
+  const buildScene = (mode) => {
+    const sc = new THREE.Scene()
+    sc.background = new THREE.Color(mode === 'trailer' ? 0x0c0a14 : 0x050505)
+    if (mode === 'trailer') sc.fog = new THREE.FogExp2(0x0c0a14, 0.018)
+
+    const m = gltf.scene.clone(true)
+    const box = new THREE.Box3().setFromObject(m)
+    const center = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z) || 1
+    m.position.sub(center); m.scale.setScalar(2/maxDim)
+    sc.add(m)
+
+    if (mode === 'trailer') {
+      sc.add(new THREE.AmbientLight(0xff8050, 0.35))
+      sc.add(new THREE.AmbientLight(0x102030, 0.5))
+      const key = new THREE.DirectionalLight(0xfff0d8, 2.2); key.position.set(6,8,6); sc.add(key)
+      const rim = new THREE.DirectionalLight(0x00FFE0, 1.3); rim.position.set(-6,2,-3); sc.add(rim)
+      const accent = new THREE.PointLight(0xB4FF50, 1.4, 16); accent.position.set(3,-1,4); sc.add(accent)
+    } else {
+      sc.add(new THREE.AmbientLight(0xffffff, 0.7))
+      const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(4,6,4); sc.add(key)
+      const rim = new THREE.DirectionalLight(0x00FFE0, 0.6); rim.position.set(-3,1,-3); sc.add(rim)
+    }
+    return sc
+  }
+
+  const renderTo = (W, H, mode) => {
+    const r = new THREE.WebGLRenderer({ antialias:true, alpha:false, preserveDrawingBuffer:true })
+    r.setSize(W, H, false)
+    r.setPixelRatio(1)
+    const sc = buildScene(mode)
+    const cam = new THREE.PerspectiveCamera(35, W/H, 0.01, 100)
+    if (mode === 'trailer') cam.position.set(3.4, 1.8, 4.2)
+    else cam.position.set(2.6, 1.8, 2.6)
+    cam.lookAt(0, 0, 0)
+    r.render(sc, cam)
+    const url = r.domElement.toDataURL('image/png')
+    sc.traverse(o => {
+      o.geometry?.dispose()
+      const mm = o.material ? (Array.isArray(o.material)?o.material:[o.material]) : []
+      mm.forEach(x => x.dispose())
+    })
+    r.dispose(); r.forceContextLoss()
+    return url
+  }
+
+  const squareUrl = renderTo(1024, 1024, 'square')
+  const trailerBaseUrl = renderTo(1920, 1080, 'trailer')
+
+  // Compose HUD overlay onto trailer
+  const trailerUrl = await composeTrailerHUD(trailerBaseUrl, asset)
+
+  const baseName = (asset.cleanName || 'asset').replace(/\.glb$/i,'')
+  downloadDataURL(squareUrl, baseName + '.square.png')
+  setTimeout(() => downloadDataURL(trailerUrl, baseName + '.trailer.png'), 300)
+  notify('✦ 2 PNGs descargados', 'var(--lime)')
+}
+
+function composeTrailerHUD(baseUrl, asset) {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => {
+      const cv = document.createElement('canvas')
+      cv.width = 1920; cv.height = 1080
+      const ctx = cv.getContext('2d')
+      ctx.drawImage(img, 0, 0)
+
+      // Vignette
+      const grad = ctx.createRadialGradient(960, 540, 400, 960, 540, 1100)
+      grad.addColorStop(0, 'rgba(0,0,0,0)')
+      grad.addColorStop(1, 'rgba(0,0,0,0.6)')
+      ctx.fillStyle = grad; ctx.fillRect(0,0,1920,1080)
+
+      // Top-left brand
+      ctx.fillStyle = 'rgba(0,255,224,0.85)'
+      ctx.font = '700 36px "Bebas Neue", sans-serif'
+      ctx.fillText('ANT · ON · MARS', 60, 90)
+      ctx.fillStyle = 'rgba(184,255,80,0.6)'
+      ctx.font = '500 14px "Share Tech Mono", monospace'
+      ctx.fillText('SOUTH HUSTLES · GLB CATALOG', 60, 116)
+
+      // Bottom title
+      ctx.fillStyle = 'rgba(0,255,224,0.95)'
+      ctx.font = '700 84px "Bebas Neue", sans-serif'
+      const title = (asset.cleanName || 'asset').toUpperCase()
+      ctx.shadowColor = 'rgba(0,255,224,0.45)'; ctx.shadowBlur = 24
+      ctx.fillText(title, 60, 980)
+      ctx.shadowBlur = 0
+
+      // Stats line
+      if (asset.stats) {
+        ctx.fillStyle = 'rgba(255,255,255,0.45)'
+        ctx.font = '500 18px "Share Tech Mono", monospace'
+        ctx.fillText(`${fmt(asset.stats.tri)} TRIS · ${fmt(asset.stats.vert)} VERTS · ${asset.stats.meshes} MESHES · ${fmt(asset.size)} BYTES`, 60, 1015)
+      }
+
+      // Scanline
+      ctx.fillStyle = 'rgba(0,255,224,0.04)'
+      for (let y = 0; y < 1080; y += 4) ctx.fillRect(0, y, 1920, 2)
+
+      resolve(cv.toDataURL('image/png'))
+    }
+    img.src = baseUrl
+  })
+}
+
+async function takeCardSnapshots(asset, id) {
+  // Reuse the load: render fresh from blob to get clean output
+  await renderSnapshots(asset)
+}
+
+// ─── EVENT LISTENERS ──────────────────────────────────────────────────────
+document.getElementById('btn-pick').addEventListener('click', smartPickFolder)
+tryRestoreLastFolder()
+document.getElementById('search').addEventListener('input', e => { state.search = e.target.value.toLowerCase(); renderGrid() })
+document.getElementById('sort-mode').addEventListener('change', e => { state.sort = e.target.value; renderGrid() })
+document.getElementById('grid-sz').addEventListener('input', e => {
+  state.gridSize = parseInt(e.target.value)
+  const sv = document.getElementById('size-val'); if (sv) sv.textContent = state.gridSize
+  const c = document.getElementById('container')
+  if (c.classList.contains('asset-grid')) c.style.gridTemplateColumns = `repeat(auto-fill,minmax(${state.gridSize}px,1fr))`
+})
+document.querySelectorAll('.cat-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'))
+    chip.classList.add('active')
+    state.filter = chip.dataset.cat; renderGrid()
+  })
+})
+
+// ─── HUD: draggable panels + live SVG bezier connectors ─────────────────
+function initHUD() {
+  const panels = document.querySelectorAll('.hud-panel')
+  panels.forEach(panel => {
+    const handle = panel.querySelector('.hud-panel-handle')
+    if (!handle) return
+    let dragX = 0, dragY = 0, sx = 0, sy = 0, dragging = false
+    handle.addEventListener('mousedown', e => {
+      dragging = true; panel.classList.add('dragging')
+      const r = panel.getBoundingClientRect()
+      // Lock to top-left positioning so transform-based centering doesn't fight us
+      panel.style.top = r.top + 'px'
+      panel.style.left = r.left + 'px'
+      panel.style.right = 'auto'; panel.style.bottom = 'auto'; panel.style.transform = 'none'
+      sx = e.clientX - r.left; sy = e.clientY - r.top
+      e.preventDefault()
+    })
+    window.addEventListener('mousemove', e => {
+      if (!dragging) return
+      panel.style.left = (e.clientX - sx) + 'px'
+      panel.style.top = (e.clientY - sy) + 'px'
+    })
+    window.addEventListener('mouseup', () => {
+      if (dragging) { dragging = false; panel.classList.remove('dragging') }
+    })
+  })
+
+  // Live SVG draws bezier traces between every pair of adjacent panels.
+  const svg = document.getElementById('hud-svg')
+  const tracesGrp = document.getElementById('hud-traces')
+  const anchorsGrp = document.getElementById('hud-anchors')
+
+  const SVG_NS = 'http://www.w3.org/2000/svg'
+  const center = () => ({ x: window.innerWidth/2, y: window.innerHeight/2 })
+
+  function panelAnchor(panel) {
+    const r = panel.getBoundingClientRect()
+    const c = center()
+    // Pick the closest edge midpoint to the screen center
+    const mids = [
+      { x: r.left + r.width/2, y: r.top },          // top
+      { x: r.left + r.width/2, y: r.bottom },       // bottom
+      { x: r.left, y: r.top + r.height/2 },         // left
+      { x: r.right, y: r.top + r.height/2 },        // right
+    ]
+    let best = mids[0], bd = Infinity
+    for (const m of mids) {
+      const d = (m.x-c.x)**2 + (m.y-c.y)**2
+      if (d < bd) { bd = d; best = m }
+    }
+    return best
+  }
+
+  function tick() {
+    requestAnimationFrame(tick)
+    svg.setAttribute('viewBox', `0 0 ${window.innerWidth} ${window.innerHeight}`)
+    tracesGrp.innerHTML = ''
+    anchorsGrp.innerHTML = ''
+    const c = center()
+
+    // Center hub circle
+    const hub = document.createElementNS(SVG_NS, 'circle')
+    hub.setAttribute('cx', c.x); hub.setAttribute('cy', c.y); hub.setAttribute('r', 28)
+    hub.setAttribute('class', 'anchor')
+    anchorsGrp.appendChild(hub)
+    const hubInner = document.createElementNS(SVG_NS, 'circle')
+    hubInner.setAttribute('cx', c.x); hubInner.setAttribute('cy', c.y); hubInner.setAttribute('r', 4)
+    hubInner.setAttribute('class', 'anchor-dot')
+    anchorsGrp.appendChild(hubInner)
+
+    panels.forEach(panel => {
+      const a = panelAnchor(panel)
+      // Bezier from panel anchor to hub — control points biased away from line
+      const dx = c.x - a.x, dy = c.y - a.y
+      const dist = Math.hypot(dx, dy)
+      const nx = -dy / dist, ny = dx / dist  // perpendicular
+      const bend = Math.min(80, dist * 0.18)
+      const cx1 = a.x + dx*0.35 + nx*bend
+      const cy1 = a.y + dy*0.35 + ny*bend
+      const cx2 = a.x + dx*0.7 - nx*bend*0.3
+      const cy2 = a.y + dy*0.7 - ny*bend*0.3
+      const path = document.createElementNS(SVG_NS, 'path')
+      path.setAttribute('d', `M ${a.x} ${a.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${c.x} ${c.y}`)
+      if (panel.classList.contains('dragging') || panel.matches(':hover')) path.setAttribute('class', 'trace-active')
+      tracesGrp.appendChild(path)
+
+      // Anchor circle at panel edge
+      const aCircle = document.createElementNS(SVG_NS, 'circle')
+      aCircle.setAttribute('cx', a.x); aCircle.setAttribute('cy', a.y); aCircle.setAttribute('r', 5)
+      aCircle.setAttribute('class', 'anchor')
+      anchorsGrp.appendChild(aCircle)
+      const aDot = document.createElementNS(SVG_NS, 'circle')
+      aDot.setAttribute('cx', a.x); aDot.setAttribute('cy', a.y); aDot.setAttribute('r', 1.5)
+      aDot.setAttribute('class', 'anchor-dot')
+      anchorsGrp.appendChild(aDot)
+    })
+  }
+  tick()
+}
+initHUD()
+
+document.getElementById('modal-close-btn').addEventListener('click', closeVisor)
+document.getElementById('modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeVisor() })
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('modal').classList.contains('open')) closeVisor() })
+
+document.getElementById('btn-save-name').addEventListener('click', () => {
+  const v = document.getElementById('clean-name').value.trim()
+  if (!v || !state.modal) return
+  state.modal.cleanName = v
+  document.getElementById('modal-title').textContent = v.toUpperCase()
+  notify('✦ NOMBRE OK', 'var(--lime)'); renderGrid()
+})
+document.getElementById('clean-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-save-name').click()
+})
+
+document.querySelectorAll('.crop-mode button').forEach(b => {
+  b.addEventListener('click', () => setCropMode(b.dataset.crop))
+})
+;['crop-x','crop-y','crop-z','crop-px','crop-py','crop-pz'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updateCropHelper)
+})
+document.getElementById('btn-reset-crop').addEventListener('click', resetCrop)
+document.getElementById('btn-export-crop').addEventListener('click', exportCrop)
+document.getElementById('btn-download').addEventListener('click', () => {
+  if (!state.modal) return
+  const url = URL.createObjectURL(state.modal.file)
+  const lnk = document.createElement('a'); lnk.href=url; lnk.download=state.modal.file.name; lnk.click()
+  setTimeout(() => URL.revokeObjectURL(url), 500)
+  notify('✦ DESCARGADO', 'var(--lime)')
+})
+document.getElementById('btn-send-scene').addEventListener('click', () => state.modal && sendToScene(state.modal))
+document.getElementById('btn-snap-visor').addEventListener('click', () => state.modal && renderSnapshots(state.modal))
+
+console.log('%c📂 GLB LOCAL VIEWER · ANT ON MARS', 'color:#00FFE0;font-size:14px;font-family:monospace')
+</script>
+</body>
+</html>

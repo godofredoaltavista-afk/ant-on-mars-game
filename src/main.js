@@ -13,6 +13,8 @@ import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js'
 import Stats from 'stats-gl'
 import { Fn, uniform, float, vec3, positionWorld, smoothstep, mix, mx_noise_float } from 'three/tsl'
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
+import { WebGLRenderer as StdWebGLRenderer } from 'three'
+import { GLBPreviewRenderer } from './ui/GLBPreviewRenderer.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GLOBALS
@@ -38,6 +40,7 @@ const CHASSIS_HW = 1.0, CHASSIS_HH = 0.35, CHASSIS_HD = 0.6
 let lastGroundX = 0, lastGroundZ = 0
 const keys = {}
 let constructorMode = false, placedObjects = [], selectedObject = null, ghostObject = null
+let _localViewerWindow = null
 let constructorIdCounter = 0
 let vehicleMode = 'gravity', antiGravityActive = false, floatModeActive = false
 let gravTanks = 5, gravTankPartial = 0, gravConsumeTime = 0
@@ -130,10 +133,36 @@ const R2_ASSETS = [
   'ruedacompresed.glb',
   'van.satelite.glb',
   'van.creative.glb',
+  // Meshy assets — subir a R2 para activar:
+  // 'portal-of-infinite-colors.glb',
+  // 'prismatic-dragons-geometric-maze.glb',
+  // 'neon-qilin-cloudscape.glb',
+  // 'rainbow-dragon-cosmic.glb',
 ]
 let GLB_CATALOG = []
+const previewRenderers = new Map()
 async function loadGLBCatalog() {
-  GLB_CATALOG = R2_ASSETS.map(f => ({ name: f.replace(/\.glb$/i,''), path: `${GLB_CDN_BASE}/${f}`, thumb: '📦' }))
+  const r2Items = R2_ASSETS.map(f => ({
+    id: f.replace(/\.glb$/i, ''),
+    name: f.replace(/\.glb$/i, ''),
+    path: `${GLB_CDN_BASE}/${f}`,
+  }))
+  let localItems = []
+  try {
+    const res = await fetch('/GLB/manifest.json')
+    if (res.ok) {
+      const manifest = await res.json()
+      localItems = manifest
+        .filter(f => !R2_ASSETS.includes(f))
+        .map(f => ({
+          id: 'local-' + f.replace(/\.glb$/i, ''),
+          name: f.replace(/\.glb$/i, ''),
+          path: `/GLB/${f}`,
+          note: 'local',
+        }))
+    }
+  } catch {}
+  GLB_CATALOG = [...r2Items, ...localItems]
 }
 
 // World Zones — hardcoded discovery zones (legacy)
@@ -275,7 +304,8 @@ let _brakeMesh = null, _brakeLight = null
 let _turnBlinkT = 0
 // Night mode
 let _nightMode = false
-let _ingenuitySpinAngle = 0             // legacy — no longer used for spin, kept for cleanup safety
+let _ingenuitySpinAngle = 0
+let _ingenuityRotorNode = null          // child group on probeMesh — only this spins in Y (rotors)
 let _droneOnlyFlight = false            // true when drone launched standalone (no probe mission)
 let _probeHudRings = []                 // 3D orbital rings around probe (HUD)
 let _capsHudLine = null                 // 3D targeting line capsule → satellite (HUD)
@@ -528,6 +558,7 @@ async function init() {
   // UI Setup
   await loadGLBCatalog()
   setupUI()
+  initVisorListeners()
 
   // CAPA 1 — TORNO / DRILL MODE (additive)
   initDrillModule()
@@ -1112,24 +1143,93 @@ function setupUI() {
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'))
   dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); const file=[...e.dataTransfer.files].find(f=>f.name.toLowerCase().endsWith('.glb')); if (file) { if (!constructorMode) toggleConstructorMode(); loadGLBFromFile(file) } })
 
-  // Catalog list
+  // Local folder picker — opens dedicated GLB viewer in a new tab.
+  // The viewer handles folder selection, lazy-render, crop, rename, and posts back via postMessage.
+  const folderBtn = document.getElementById('ctor-folder-btn')
+  if (folderBtn) {
+    folderBtn.addEventListener('click', () => {
+      const w = window.open('/catalog-local.html', 'glb-local-viewer', 'width=1400,height=900')
+      if (!w) { showToast('Permití pop-ups para abrir el visor', '#FF4444', 2000); return }
+      _localViewerWindow = w
+      showToast('✦ VISOR DE CARPETA LOCAL ABIERTO', '#00FFE0', 1800)
+    })
+  }
+  // World export/import buttons (constructor panel)
+  const worldExportBtn = document.getElementById('ctor-world-export-btn')
+  const worldImportBtn = document.getElementById('ctor-world-import-btn')
+  const worldImportInput = document.getElementById('ctor-world-import-input')
+  if (worldExportBtn) worldExportBtn.addEventListener('click', exportWorld)
+  if (worldImportBtn && worldImportInput) {
+    worldImportBtn.addEventListener('click', () => worldImportInput.click())
+    worldImportInput.addEventListener('change', e => { if (e.target.files[0]) importWorldFromFile(e.target.files[0]); e.target.value = '' })
+  }
+
+  // Receive GLBs from the local-viewer tab
+  window.addEventListener('message', async (ev) => {
+    const data = ev.data
+    if (!data || data.type !== 'send-to-scene' || !data.blob) return
+    if (!constructorMode) toggleConstructorMode()
+    const file = new File([data.blob], data.filename || 'asset.glb', { type: 'model/gltf-binary' })
+    showLoadingMsg(`◌ CARGANDO ${file.name}…`); showProgress(0)
+    const blobUrl = URL.createObjectURL(file)
+    gltfLoader.load(blobUrl, (gltf) => {
+      hideLoadingMsg(); hideProgress()
+      enterGhostMode(gltf.scene, file.name)
+      // 3x bigger spawn than auto-scale default
+      if (ghostObject) {
+        ghostObject.scale.multiplyScalar(3)
+        ghostObject._baseScale = (ghostObject._baseScale || 1) * 3
+        ghostObject._source = 'local'
+        ghostObject._url = null
+        ghostObject._filename = file.name
+      }
+      enterPlaceMode()
+    }, (p) => { if (p.total > 0) showProgress(Math.round(p.loaded / p.total * 100)) },
+       (err) => { hideLoadingMsg(); hideProgress(); console.error('[POSTMSG]', err) })
+    showToast(`✦ ${file.name} → POSICIONÁ + CLICK`, '#B4FF50', 2200)
+  })
+
+  // Catalog list — 3D preview per card via IntersectionObserver
   const catalogList = document.getElementById('ctor-catalog-list')
+  const catalogObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const itemId = entry.target.dataset.previewId
+      if (entry.isIntersecting) {
+        if (!previewRenderers.has(itemId)) {
+          const canvas = entry.target.querySelector('canvas')
+          const item = GLB_CATALOG.find(i => i.id === itemId)
+          if (canvas && item) {
+            const r = new GLBPreviewRenderer(canvas, item.path, { assetName: item.name })
+            previewRenderers.set(itemId, r)
+            r.init().then(() => {
+              const spinner = entry.target.querySelector('.ctor-slot-spinner')
+              if (spinner) spinner.style.display = 'none'
+            }).catch(() => {})
+          }
+        } else {
+          previewRenderers.get(itemId)?.start()
+        }
+      } else {
+        previewRenderers.get(itemId)?.stop()
+      }
+    })
+  }, { root: catalogList, threshold: 0.1 })
+
   GLB_CATALOG.forEach(item => {
     const slot = document.createElement('div')
     slot.className = 'ctor-glb-slot'
-    const previewSrc = `/GLB/previews/${item.name}.png`
+    slot.dataset.previewId = item.id
     slot.innerHTML = `
       <div class="ctor-slot-thumb">
-        <img class="ctor-slot-img" src="${previewSrc}" alt="${item.name}"
-          onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
-          style="width:100%;height:100%;object-fit:cover;border-radius:3px;display:block;" />
-        <div class="ctor-slot-img-fallback" style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:20px;color:rgba(255,255,255,0.25);">◈</div>
+        <canvas width="128" height="128" style="width:100%;height:100%;display:block;"></canvas>
+        <div class="ctor-slot-spinner">◈</div>
       </div>
       <div class="ctor-slot-info"><div class="ctor-slot-name">${item.name}</div><div class="ctor-slot-note">${item.note||''}</div></div>
       <button class="ctor-slot-add">+</button>`
     slot.querySelector('.ctor-slot-add').addEventListener('click', (e) => { e.stopPropagation(); if (!constructorMode) toggleConstructorMode(); loadGLBFromCatalog(item) })
-    slot.addEventListener('click', () => { if (!constructorMode) toggleConstructorMode(); loadGLBFromCatalog(item) })
+    slot.addEventListener('click', (e) => { if (!e.target.closest('.ctor-slot-add')) openGLBVisor(item) })
     catalogList.appendChild(slot)
+    catalogObserver.observe(slot)
   })
 
   // Inspector buttons
@@ -1165,8 +1265,12 @@ function setupUI() {
   document.getElementById('ctor-col-convex').addEventListener('click', () => { if (selectedObject) { createGLBCollider(selectedObject,'convexHull'); syncCollisionBtns('convexHull') } })
   document.getElementById('ctor-col-trimesh').addEventListener('click', () => { if (selectedObject) { createGLBCollider(selectedObject,'trimesh'); syncCollisionBtns('trimesh') } })
 
-  // Panel close
-  document.getElementById('ctor-catalog-close').addEventListener('click', () => document.getElementById('ctor-panel-catalog').classList.remove('visible'))
+  // Panel close — dispose all preview renderers to free WebGL contexts
+  document.getElementById('ctor-catalog-close').addEventListener('click', () => {
+    document.getElementById('ctor-panel-catalog').classList.remove('visible')
+    previewRenderers.forEach(r => r.dispose())
+    previewRenderers.clear()
+  })
   document.getElementById('ctor-inspector-close').addEventListener('click', deselectObject)
 
   // Draggable panels
@@ -1776,6 +1880,7 @@ function setupEvents() {
 // ═══════════════════════════════════════════════════════════════════════════
 // GAME LOOP
 // ═══════════════════════════════════════════════════════════════════════════
+let _secondaryCamFrame = 0
 function animate() {
   // Skip physics if game is paused (escape menu)
   if (gamePaused) {
@@ -2751,7 +2856,7 @@ function buildSaveDataV8() {
     terrain:{frequency:terrainSettings.frequency,amplitude:terrainSettings.amplitude,planetCurvature:terrainSettings.planetCurvature||0},
     environment:{skyColor:scene.background?'#'+scene.background.getHexString():'#000',fogColor:scene.fog?'#'+scene.fog.color.getHexString():'#000',fogNear:scene.fog?scene.fog.near:10,fogFar:scene.fog?scene.fog.far:500},
     camera:{position:{x:camera.position.x,y:camera.position.y,z:camera.position.z},fov:camera.fov,mode:carSettings.orbitControls?'orbit':'follow',distance:cameraSettings.distance,height:cameraSettings.height,lookHeight:cameraSettings.lookHeight,smoothing:cameraSettings.smoothing},
-    placedAssets:placedObjects.map(e=>({id:e.id,originalFilename:e.name,source:e.source||'catalog',collisionMode:e.physics?.mode||'none',position:{x:+e.group.position.x.toFixed(3),y:+e.group.position.y.toFixed(3),z:+e.group.position.z.toFixed(3)},rotation:{x:+e.group.rotation.x.toFixed(4),y:+e.group.rotation.y.toFixed(4),z:+e.group.rotation.z.toFixed(4)},scale:+e.group.scale.x.toFixed(4),type:'glb'})),
+    placedAssets:placedObjects.map(e=>({id:e.id,originalFilename:e.name,source:e.source||'local',url:e.url||null,collisionMode:e.physics?.mode||'none',position:{x:+e.group.position.x.toFixed(3),y:+e.group.position.y.toFixed(3),z:+e.group.position.z.toFixed(3)},rotation:{x:+e.group.rotation.x.toFixed(4),y:+e.group.rotation.y.toFixed(4),z:+e.group.rotation.z.toFixed(4)},scale:+e.group.scale.x.toFixed(4),type:'glb'})),
     discoveredZones:Array.from(worldZoneDiscovered),
     playerPosition:{x:chassisPos.x,y:chassisPos.y,z:chassisPos.z},
     driveMode:vehicleMode,
@@ -3220,15 +3325,18 @@ async function applyWorldData(data) {
   // Load GLB assets from saved world
   if (data.placedAssets && data.placedAssets.length > 0) {
     showToast(`LOADING ${data.placedAssets.length} ASSETS...`, '#00AAFF', 2000)
+    const _unresolvedAssets = []
     for (const asset of data.placedAssets) {
       try {
         await loadAssetFromSave(asset)
       } catch (err) {
         console.warn(`[Import] Failed to load asset ${asset.originalFilename}:`, err)
-        showToast(`WARNING: ${asset.originalFilename} not found`, '#FFB347', 1500)
+        _unresolvedAssets.push(asset)
       }
     }
-    showToast(`✦ ${data.placedAssets.length} ASSETS LOADED`, '#B4FF50', 2000)
+    const _loaded = data.placedAssets.length - _unresolvedAssets.length
+    showToast(`✦ ${_loaded}/${data.placedAssets.length} ASSETS LOADED`, _unresolvedAssets.length > 0 ? '#FFB347' : '#B4FF50', 2000)
+    if (_unresolvedAssets.length > 0) showUnresolvedAssetsPanel(_unresolvedAssets)
   }
 
   // Dust & Wind particle settings
@@ -3287,10 +3395,14 @@ async function applyWorldData(data) {
 }
 
 async function loadAssetFromSave(assetData) {
-  const path = assetData.originalFilename
-  // Try to find the GLB in the catalog or from the path
-  const catalogItem = GLB_CATALOG.find(c => c.name === assetData.originalFilename.replace(/\.glb$/i, ''))
-  const loadPath = catalogItem ? catalogItem.path : `${GLB_CDN_BASE}/${assetData.originalFilename}`
+  // Priority: use stored URL (works cross-device for R2) → catalog match → CDN fallback
+  let loadPath
+  if (assetData.url) {
+    loadPath = assetData.url
+  } else {
+    const catalogItem = GLB_CATALOG.find(c => c.name === assetData.originalFilename.replace(/\.glb$/i, ''))
+    loadPath = catalogItem ? catalogItem.path : `${GLB_CDN_BASE}/${assetData.originalFilename}`
+  }
 
   const gltf = await new Promise((resolve, reject) => {
     gltfLoader.load(loadPath, resolve, undefined, reject)
@@ -3316,14 +3428,72 @@ async function loadAssetFromSave(assetData) {
     id: constructorIdCounter++,
     baseScale: assetData.scale,
     physics: null,
-    source: assetData.source || 'import'
+    source: assetData.source || 'import',
+    url: assetData.url || null
   }
   placedObjects.push(entry)
 
-  // Apply collision mode if saved (but not trimesh by default for performance)
+  // Apply collision mode if saved
   if (assetData.collisionMode && assetData.collisionMode !== 'none') {
     createGLBCollider(entry, assetData.collisionMode)
   }
+}
+
+function showUnresolvedAssetsPanel(assets) {
+  const existing = document.getElementById('unresolved-assets-panel')
+  if (existing) existing.remove()
+
+  const panel = document.createElement('div')
+  panel.id = 'unresolved-assets-panel'
+  panel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:4000;background:rgba(8,8,18,0.97);backdrop-filter:blur(20px);border:1px solid rgba(255,100,50,0.4);border-radius:8px;padding:20px;min-width:340px;max-width:420px;font-family:"Share Tech Mono",monospace;'
+
+  const listHtml = assets.map(a => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;margin:4px 0;background:rgba(255,255,255,0.04);border-radius:4px;border-left:2px solid rgba(255,100,50,0.5);">
+      <span style="color:rgba(255,255,255,0.6);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;">${a.originalFilename}</span>
+      <span style="color:rgba(255,100,50,0.7);font-size:8px;white-space:nowrap;margin-left:8px;">${a.source||'local'}</span>
+    </div>`).join('')
+
+  panel.innerHTML = `
+    <div style="font-size:10px;color:#FFB347;letter-spacing:0.15em;margin-bottom:4px;">⚠ ASSETS NO ENCONTRADOS</div>
+    <div style="font-size:8px;color:rgba(255,255,255,0.3);margin-bottom:12px;letter-spacing:0.05em;">${assets.length} asset(s) no se pudieron cargar cross-device</div>
+    <div style="max-height:180px;overflow-y:auto;margin-bottom:12px;">${listHtml}</div>
+    <div style="font-size:8px;color:rgba(255,255,255,0.25);margin-bottom:12px;line-height:1.5;">
+      Para resolverlos: subí los GLBs a Cloudflare R2 y re-exportá el mundo desde la máquina original.
+      O cargalos desde carpeta local con el botón de abajo.
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button id="unresolved-folder-btn" style="flex:1;padding:8px;background:rgba(0,255,224,0.1);border:1px solid rgba(0,255,224,0.3);color:#00FFE0;border-radius:4px;cursor:pointer;font-family:inherit;font-size:9px;letter-spacing:0.1em;">📂 SELECCIONAR CARPETA</button>
+      <button id="unresolved-close-btn" style="padding:8px 16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4);border-radius:4px;cursor:pointer;font-family:inherit;font-size:9px;">CERRAR</button>
+    </div>`
+
+  document.body.appendChild(panel)
+
+  panel.querySelector('#unresolved-close-btn').addEventListener('click', () => panel.remove())
+  panel.querySelector('#unresolved-folder-btn').addEventListener('click', async () => {
+    if (!window.showDirectoryPicker) { showToast('File System Access API no soportada en este navegador', '#FF4444', 2000); return }
+    try {
+      const dirHandle = await window.showDirectoryPicker()
+      const fileMap = new Map()
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.glb')) {
+          fileMap.set(entry.name.toLowerCase(), await entry.getFile())
+        }
+      }
+      let resolved = 0
+      for (const asset of assets) {
+        const file = fileMap.get(asset.originalFilename.toLowerCase())
+        if (file) {
+          try {
+            const blobUrl = URL.createObjectURL(file)
+            await loadAssetFromSave({ ...asset, url: blobUrl })
+            resolved++
+          } catch(e) { console.warn('[Import] Still failed:', asset.originalFilename, e) }
+        }
+      }
+      panel.remove()
+      showToast(`✦ ${resolved}/${assets.length} ASSETS RESUELTOS`, resolved === assets.length ? '#B4FF50' : '#FFB347', 2500)
+    } catch(e) { if (e.name !== 'AbortError') console.error(e) }
+  })
 }
 
 // ESCAPE MENU
@@ -3442,12 +3612,14 @@ const gltfLoader = new GLTFLoader(); gltfLoader.setDRACOLoader(dracoLoader)
 
 function loadGLBFromFile(file){
   showLoadingMsg(`◌ CARGANDO ${file.name}…`); showProgress(0)
-  gltfLoader.load(URL.createObjectURL(file),(gltf)=>{hideLoadingMsg();hideProgress();enterGhostMode(gltf.scene,file.name);ghostObject._source='uploaded'},(p)=>{if(p.total>0)showProgress(Math.round(p.loaded/p.total*100))},(err)=>{hideLoadingMsg();hideProgress();console.error('[CONSTRUCTOR] Error:',err)})
+  const blobUrl = URL.createObjectURL(file)
+  gltfLoader.load(blobUrl,(gltf)=>{hideLoadingMsg();hideProgress();enterGhostMode(gltf.scene,file.name);ghostObject._source='local';ghostObject._url=null;ghostObject._filename=file.name},(p)=>{if(p.total>0)showProgress(Math.round(p.loaded/p.total*100))},(err)=>{hideLoadingMsg();hideProgress();console.error('[CONSTRUCTOR] Error:',err)})
 }
 
 function loadGLBFromCatalog(item){
   showLoadingMsg(`◌ CARGANDO ${item.name}…`); showProgress(0)
-  gltfLoader.load(item.path,(gltf)=>{hideLoadingMsg();hideProgress();enterGhostMode(gltf.scene,item.name);ghostObject._source='catalog'},(p)=>{if(p.total>0)showProgress(Math.round(p.loaded/p.total*100))},(err)=>{hideLoadingMsg();hideProgress();console.error('[CONSTRUCTOR] Error:',err)})
+  const isR2 = item.path && item.path.startsWith('http')
+  gltfLoader.load(item.path,(gltf)=>{hideLoadingMsg();hideProgress();enterGhostMode(gltf.scene,item.name);ghostObject._source=isR2?'r2':'catalog';ghostObject._url=isR2?item.path:null;ghostObject._filename=item.name+'.glb'},(p)=>{if(p.total>0)showProgress(Math.round(p.loaded/p.total*100))},(err)=>{hideLoadingMsg();hideProgress();console.error('[CONSTRUCTOR] Error:',err)})
 }
 
 function placeGhostAtPoint(pt){
@@ -3456,10 +3628,95 @@ function placeGhostAtPoint(pt){
   const finalGroup=new THREE.Group()
   ghostObject.children.forEach(child=>{const clone=child.clone();clone.traverse(c=>{if(c.isMesh){c.castShadow=true;c.receiveShadow=true;c.material=c.material.clone();c.material.transparent=false;c.material.opacity=1;c.material.emissive=new THREE.Color(0x000000);c.material.needsUpdate=true}});finalGroup.add(clone)})
   finalGroup.scale.copy(ghostObject.scale); finalGroup.position.copy(pt); scene.add(finalGroup)
-  const _ghostSource=ghostObject._source||'uploaded'
+  const _ghostSource=ghostObject._source||'local'
+  const _ghostUrl=ghostObject._url||null
+  const _ghostFilename=ghostObject._filename||name
   scene.remove(ghostObject); ghostObject=null
-  const entry={group:finalGroup,name,id:constructorIdCounter++,baseScale,physics:null,source:_ghostSource}
+  const entry={group:finalGroup,name:_ghostFilename,id:constructorIdCounter++,baseScale,physics:null,source:_ghostSource,url:_ghostUrl}
   placedObjects.push(entry); updateObjList(); selectObject(entry)
+  exitPlaceMode()
+}
+
+let _placeModeFlyState = null
+
+function enterPlaceMode() {
+  document.body.classList.add('place-mode-active')
+  let overlay = document.getElementById('place-mode-overlay')
+  if (!overlay) {
+    overlay = document.createElement('div')
+    overlay.id = 'place-mode-overlay'
+    overlay.innerHTML = `
+      <div class="pm-corner pm-tl"><span>FREE FLY · WASD QE</span></div>
+      <div class="pm-corner pm-tr"><span>RIGHT-DRAG · PAN</span></div>
+      <div class="pm-corner pm-bl"><span>SHIFT · SPRINT</span></div>
+      <div class="pm-corner pm-br"><span>ESC · CANCEL</span></div>
+      <div class="pm-center">
+        <div class="pm-btn">◆ POSICIONÁ + CLICK PARA CONFIRMAR</div>
+        <div class="pm-hint">cámara libre — el preview sigue al cursor</div>
+      </div>`
+    document.body.appendChild(overlay)
+  }
+  overlay.style.display = 'block'
+
+  // Make sure orbit is on with pan enabled (right-drag = pan in OrbitControls)
+  orbit.enabled = true
+  orbit.screenSpacePanning = true
+  orbit.enablePan = true
+
+  // WASD/QE flying — adds to orbit target so the camera moves with you
+  const keys = { w:false, a:false, s:false, d:false, q:false, e:false, shift:false }
+  const onKey = (ev) => {
+    const k = ev.key.toLowerCase()
+    if (ev.type === 'keydown') {
+      if (ev.key === 'Escape') { if (ghostObject) { scene.remove(ghostObject); ghostObject = null } exitPlaceMode(); return }
+      if (k in keys) keys[k] = true
+      if (ev.key === 'Shift') keys.shift = true
+    } else {
+      if (k in keys) keys[k] = false
+      if (ev.key === 'Shift') keys.shift = false
+    }
+  }
+  window.addEventListener('keydown', onKey)
+  window.addEventListener('keyup', onKey)
+
+  const tmpForward = new THREE.Vector3()
+  const tmpRight = new THREE.Vector3()
+  const tmpUp = new THREE.Vector3(0, 1, 0)
+  const tickFly = () => {
+    if (!_placeModeFlyState) return
+    requestAnimationFrame(tickFly)
+    const speed = (keys.shift ? 1.6 : 0.55)
+    let dx = 0, dz = 0, dy = 0
+    if (keys.w) dz -= 1; if (keys.s) dz += 1
+    if (keys.a) dx -= 1; if (keys.d) dx += 1
+    if (keys.q) dy -= 1; if (keys.e) dy += 1
+    if (dx === 0 && dz === 0 && dy === 0) return
+    camera.getWorldDirection(tmpForward); tmpForward.y = 0; tmpForward.normalize()
+    tmpRight.crossVectors(tmpForward, tmpUp).normalize()
+    const move = new THREE.Vector3()
+    move.addScaledVector(tmpForward, -dz * speed)
+    move.addScaledVector(tmpRight, dx * speed)
+    move.addScaledVector(tmpUp, dy * speed)
+    camera.position.add(move)
+    orbit.target.add(move)
+  }
+  _placeModeFlyState = { onKey }
+  tickFly()
+}
+
+function exitPlaceMode() {
+  document.body.classList.remove('place-mode-active')
+  const overlay = document.getElementById('place-mode-overlay')
+  if (overlay) overlay.style.display = 'none'
+  if (_placeModeFlyState) {
+    window.removeEventListener('keydown', _placeModeFlyState.onKey)
+    window.removeEventListener('keyup', _placeModeFlyState.onKey)
+    _placeModeFlyState = null
+  }
+  if (_localViewerWindow && !_localViewerWindow.closed) {
+    try { _localViewerWindow.close() } catch {}
+    _localViewerWindow = null
+  }
 }
 
 function selectObject(entry){selectedObject=entry;transformControls.attach(entry.group);showInspector(entry);document.querySelectorAll('.ctor-obj-item').forEach(el=>el.classList.toggle('selected',parseInt(el.dataset.id)===entry.id))}
@@ -5616,7 +5873,7 @@ function tickProbe(dt) {
   const r = probeBody.rotation()
   probeMesh.position.set(p.x, p.y, p.z)
   if (!droneActive) {
-    // Autopilot: spin probe mesh on Y axis
+    // Autopilot: spin entire probe mesh on Y axis
     _ingenuitySpinAngle += dt * 22
     probeMesh.rotation.set(0, _ingenuitySpinAngle, 0)
   }
@@ -6637,6 +6894,237 @@ console.log('  window.ZoneDebug.trigger()  - Trigger zone event')
 console.log('  window.ZoneDebug.addTestZone() - Add test zone')
 console.log('  window.ZoneDebug.clear()    - Clear all zones')
 console.log('  window.ZoneDebug.active()   - List active zones')
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GLB VISOR MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+let _visorRenderer = null, _visorAnimId = null, _visorItem = null
+
+function openGLBVisor(item) {
+  _visorItem = item
+  const modal = document.getElementById('glb-visor')
+  modal.classList.add('open')
+
+  document.getElementById('visor-title').textContent = item.name.toUpperCase()
+  document.getElementById('visor-subtitle').textContent = item.note ? `[${item.note}]` : ''
+  document.getElementById('visor-name-input').value = item.name
+  document.getElementById('visor-cat').value = item.category || 'other'
+  document.getElementById('visor-info-name').textContent = item.name
+  document.getElementById('visor-info-source').textContent = item.note === 'local' ? 'LOCAL' : 'R2 CDN'
+  document.getElementById('visor-poly').textContent = '—'
+  document.getElementById('visor-verts').textContent = '—'
+  document.getElementById('visor-mats').textContent = '—'
+  document.getElementById('visor-meshes').textContent = '—'
+  document.getElementById('visor-info-poly').textContent = '—'
+  document.getElementById('visor-info-verts').textContent = '—'
+  document.getElementById('visor-info-meshes').textContent = '—'
+  document.getElementById('visor-info-mats').textContent = '—'
+  document.getElementById('visor-loading').style.display = 'flex'
+
+  _initVisorRenderer(item)
+}
+
+function closeGLBVisor() {
+  document.getElementById('glb-visor').classList.remove('open')
+  if (_visorAnimId) { cancelAnimationFrame(_visorAnimId); _visorAnimId = null }
+  if (_visorRenderer) {
+    _visorRenderer.dispose()
+    _visorRenderer.forceContextLoss()
+    _visorRenderer = null
+  }
+  document.getElementById('visor-canvas-wrap').querySelectorAll('canvas').forEach(c => c.remove())
+  _visorItem = null
+}
+
+function _initVisorRenderer(item) {
+  const wrap = document.getElementById('visor-canvas-wrap')
+  wrap.querySelectorAll('canvas').forEach(c => c.remove())
+  if (_visorAnimId) { cancelAnimationFrame(_visorAnimId); _visorAnimId = null }
+  if (_visorRenderer) { _visorRenderer.dispose(); _visorRenderer.forceContextLoss(); _visorRenderer = null }
+
+  const W = wrap.clientWidth || 800
+  const H = wrap.clientHeight || 600
+
+  _visorRenderer = new StdWebGLRenderer({ antialias: true })
+  _visorRenderer.setSize(W, H)
+  _visorRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  _visorRenderer.setClearColor(0x020202, 1)
+  _visorRenderer.shadowMap.enabled = true
+  wrap.appendChild(_visorRenderer.domElement)
+
+  const visorScene = new THREE.Scene()
+  visorScene.fog = new THREE.FogExp2(0x020202, 0.04)
+
+  const grid = new THREE.GridHelper(30, 40, 0x0a2020, 0x050f0f)
+  grid.position.y = -2
+  visorScene.add(grid)
+
+  visorScene.add(new THREE.AmbientLight(0x102020, 0.6))
+  const sun = new THREE.DirectionalLight(0xffffff, 1.8)
+  sun.position.set(6, 10, 6)
+  visorScene.add(sun)
+  const cyanLight = new THREE.PointLight(0x00FFE0, 3, 14)
+  cyanLight.position.set(-4, 3, -3)
+  visorScene.add(cyanLight)
+  const limeLight = new THREE.PointLight(0xB4FF50, 1.2, 10)
+  limeLight.position.set(5, -1, 4)
+  visorScene.add(limeLight)
+
+  const visorCamera = new THREE.PerspectiveCamera(45, W / H, 0.01, 500)
+  visorCamera.position.set(4, 3, 5)
+  visorCamera.lookAt(0, 0, 0)
+
+  // Load real GLB
+  const visorLoader = new GLTFLoader()
+  const visorDraco = new DRACOLoader()
+  visorDraco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/')
+  visorLoader.setDRACOLoader(visorDraco)
+
+  visorLoader.load(item.path, (gltf) => {
+    const model = gltf.scene
+    const box = new THREE.Box3().setFromObject(model)
+    const center = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z) || 1
+    const scale = 3 / maxDim
+
+    model.position.sub(center.multiplyScalar(scale))
+    model.scale.setScalar(scale)
+
+    // Count geometry stats
+    let tris = 0, verts = 0, meshCount = 0
+    const matSet = new Set()
+    model.traverse(child => {
+      if (!child.isMesh) return
+      meshCount++
+      const geo = child.geometry
+      if (geo.index) tris += geo.index.count / 3
+      else if (geo.attributes.position) tris += geo.attributes.position.count / 3
+      if (geo.attributes.position) verts += geo.attributes.position.count
+      ;(Array.isArray(child.material) ? child.material : [child.material]).forEach(m => matSet.add(m))
+    })
+
+    const fmt = n => Math.round(n).toLocaleString()
+    document.getElementById('visor-poly').textContent = fmt(tris)
+    document.getElementById('visor-verts').textContent = fmt(verts)
+    document.getElementById('visor-mats').textContent = matSet.size
+    document.getElementById('visor-meshes').textContent = meshCount
+    document.getElementById('visor-info-poly').textContent = fmt(tris)
+    document.getElementById('visor-info-verts').textContent = fmt(verts)
+    document.getElementById('visor-info-meshes').textContent = meshCount
+    document.getElementById('visor-info-mats').textContent = matSet.size
+
+    visorScene.add(model)
+    document.getElementById('visor-loading').style.display = 'none'
+
+    const dist = (scale * maxDim) * 2.4
+    visorCamera.position.set(dist, dist * 0.7, dist)
+    visorCamera.lookAt(0, 0, 0)
+    visorCamera.updateProjectionMatrix()
+    visorDraco.dispose()
+  }, undefined, () => {
+    document.getElementById('visor-loading').style.display = 'none'
+    visorDraco.dispose()
+  })
+
+  // Manual orbit controls
+  let isDragging = false, isShift = false
+  let theta = 0.5, phi = 1.1, radius = 8
+  let targetTheta = 0.5, targetPhi = 1.1
+  let panX = 0, panY = 0
+  let prevMouse = { x: 0, y: 0 }
+
+  const cvs = _visorRenderer.domElement
+  const onKey = (e) => { if (e.key === 'Shift') isShift = e.type === 'keydown' }
+  window.addEventListener('keydown', onKey)
+  window.addEventListener('keyup', onKey)
+  cvs.addEventListener('mousedown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY } })
+  window.addEventListener('mouseup', () => isDragging = false)
+  window.addEventListener('mousemove', e => {
+    if (!isDragging) return
+    const dx = e.clientX - prevMouse.x
+    const dy = e.clientY - prevMouse.y
+    prevMouse = { x: e.clientX, y: e.clientY }
+    if (isShift) { panX -= dx * 0.008; panY += dy * 0.008 }
+    else { targetTheta -= dx * 0.005; targetPhi = Math.max(0.05, Math.min(Math.PI - 0.05, targetPhi + dy * 0.005)) }
+  })
+  cvs.addEventListener('wheel', e => { radius = Math.max(0.5, Math.min(50, radius + e.deltaY * 0.01)) }, { passive: true })
+
+  // Touch
+  let lastTouch = null
+  cvs.addEventListener('touchstart', e => { lastTouch = e.touches[0] })
+  cvs.addEventListener('touchmove', e => {
+    if (!lastTouch) return
+    const t = e.touches[0]
+    targetTheta -= (t.clientX - lastTouch.clientX) * 0.005
+    targetPhi = Math.max(0.05, Math.min(Math.PI - 0.05, targetPhi + (t.clientY - lastTouch.clientY) * 0.005))
+    lastTouch = t
+    e.preventDefault()
+  }, { passive: false })
+
+  // Resize
+  const resizeObs = new ResizeObserver(() => {
+    if (!_visorRenderer) return
+    const W2 = wrap.clientWidth, H2 = wrap.clientHeight
+    _visorRenderer.setSize(W2, H2)
+    visorCamera.aspect = W2 / H2
+    visorCamera.updateProjectionMatrix()
+  })
+  resizeObs.observe(wrap)
+
+  let vt = 0
+  const loop = () => {
+    _visorAnimId = requestAnimationFrame(loop)
+    vt += 0.006
+    if (!isDragging) targetTheta += 0.004
+    theta += (targetTheta - theta) * 0.07
+    phi += (targetPhi - phi) * 0.07
+    visorCamera.position.x = panX + radius * Math.sin(phi) * Math.sin(theta)
+    visorCamera.position.y = panY + radius * Math.cos(phi)
+    visorCamera.position.z = radius * Math.sin(phi) * Math.cos(theta)
+    visorCamera.lookAt(panX, panY, 0)
+    cyanLight.intensity = 2.5 + Math.sin(vt * 1.5) * 0.8
+    if (_visorRenderer) _visorRenderer.render(visorScene, visorCamera)
+  }
+  loop()
+}
+
+// Visor event listeners (runs once after DOM ready — called in init())
+function initVisorListeners() {
+  document.getElementById('visor-close').addEventListener('click', closeGLBVisor)
+  document.getElementById('glb-visor').addEventListener('click', e => { if (e.target === e.currentTarget) closeGLBVisor() })
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('glb-visor').classList.contains('open')) closeGLBVisor() })
+
+  document.getElementById('visor-name-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveVisorName() })
+  document.getElementById('visor-name-save').addEventListener('click', saveVisorName)
+  document.getElementById('visor-cat').addEventListener('change', () => {
+    if (_visorItem) _visorItem.category = document.getElementById('visor-cat').value
+  })
+  document.getElementById('visor-screenshot').addEventListener('click', () => {
+    if (!_visorRenderer) return
+    const link = document.createElement('a')
+    link.download = (_visorItem?.name || 'asset') + '_preview.png'
+    link.href = _visorRenderer.domElement.toDataURL('image/png')
+    link.click()
+  })
+  document.getElementById('visor-add-scene').addEventListener('click', () => {
+    if (!_visorItem) return
+    closeGLBVisor()
+    if (!constructorMode) toggleConstructorMode()
+    if (_visorItem._localFile) {
+      loadGLBFromFile(_visorItem._localFile)
+    } else {
+      loadGLBFromCatalog(_visorItem)
+    }
+  })
+}
+
+function saveVisorName() {
+  const val = document.getElementById('visor-name-input').value.trim()
+  if (!val || !_visorItem) return
+  _visorItem.name = val
+  document.getElementById('visor-title').textContent = val.toUpperCase()
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BOOT

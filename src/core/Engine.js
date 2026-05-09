@@ -60,7 +60,7 @@ export class Engine {
     const dirLight = new THREE.DirectionalLight(0xfff0d8, 3.5)
     dirLight.position.set(10, 20, 10)
     dirLight.castShadow = true
-    dirLight.shadow.mapSize.set(2048, 2048)
+    dirLight.shadow.mapSize.set(1024, 1024)
     dirLight.shadow.camera.near = 0.5
     dirLight.shadow.camera.far = 100
     dirLight.shadow.camera.left = -60
